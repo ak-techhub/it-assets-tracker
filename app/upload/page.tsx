@@ -2,6 +2,7 @@
 import { useState, useCallback } from "react";
 import ExcelUpload from "@/components/ExcelUpload";
 import RequestsTable from "@/components/RequestsTable";
+import HeadcountUpload from "@/components/HeadcountUpload";
 import { getRequests, clearAllRequests } from "@/lib/store";
 import { AccessoryRequest } from "@/lib/types";
 import { Trash2, RefreshCw, Clock } from "lucide-react";
@@ -94,8 +95,14 @@ export default function UploadPage() {
 
       {/* Upload */}
       <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-        <h2 className="text-base font-semibold text-slate-700 mb-4">Upload Excel File</h2>
+        <h2 className="text-base font-semibold text-slate-700 mb-4">Upload ServiceNow Excel</h2>
         <ExcelUpload onImported={handleImported} />
+      </section>
+
+      {/* Headcount / employee directory */}
+      <section>
+        <h2 className="text-base font-semibold text-slate-700 mb-3">Employee Directory (for Email Auto-fill)</h2>
+        <HeadcountUpload onUpdated={() => {}} />
       </section>
 
       {/* Legend */}

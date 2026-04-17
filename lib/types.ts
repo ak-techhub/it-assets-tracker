@@ -54,6 +54,12 @@ export interface AccessoryRequest {
   importedAt: string;
 }
 
+export interface EmployeeContact {
+  employeeId: string;
+  name: string;
+  email: string;
+}
+
 export interface ReportSummary {
   totalRequests: number;
   approved: number;

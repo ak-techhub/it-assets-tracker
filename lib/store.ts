@@ -6,7 +6,21 @@ export function getRequests(): AccessoryRequest[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(REQUESTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const requests: AccessoryRequest[] = raw ? JSON.parse(raw) : [];
+    // Migrate: items that have itAction but status still "pending" → mark as shipped
+    let dirty = false;
+    for (const req of requests) {
+      for (const item of req.accessories) {
+        if (item.itAction && item.status === 'pending') {
+          item.status = 'shipped';
+          item.collectionMethod = 'ship';
+          dirty = true;
+        }
+      }
+      if (dirty) recomputeStatus(req);
+    }
+    if (dirty) localStorage.setItem(REQUESTS_KEY, JSON.stringify(requests));
+    return requests;
   } catch {
     return [];
   }
@@ -165,5 +179,8 @@ export function getReportSummary(): ReportSummary {
     pendingFulfillment: allItems.filter((i) => i.status === 'pending').length,
     closedComplete:     allItems.filter((i) => i.state === 'Closed Complete').length,
     workInProgress:     allItems.filter((i) => i.state === 'Work in Progress').length,
+    dispatchedOffice:   allItems.filter((i) => i.itAction?.shipmentType === 'ship_office').length,
+    dispatchedVendor:   allItems.filter((i) => i.itAction?.shipmentType === 'ship_vendor').length,
+    totalDispatched:    allItems.filter((i) => !!i.itAction).length,
   };
 }

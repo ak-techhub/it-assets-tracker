@@ -1,8 +1,38 @@
 @import "tailwindcss";
 
+/* ── Genesys brand tokens ──────────────────────────────────────────────────── */
+@theme {
+  /* Remap every `indigo-*` class to the Genesys orange palette */
+  --color-indigo-50:  #FFF2EE;
+  --color-indigo-100: #FFE0D4;
+  --color-indigo-200: #FFC5AE;
+  --color-indigo-300: #FF9E7D;
+  --color-indigo-400: #FF6F47;
+  --color-indigo-500: #FF4A1C;
+  --color-indigo-600: #E8380B;
+  --color-indigo-700: #C42D07;
+  --color-indigo-800: #9E2706;
+  --color-indigo-900: #7A2008;
+  --color-indigo-950: #4A1204;
+
+  /* Genesys navy as a custom colour */
+  --color-navy-50:  #EEF1F6;
+  --color-navy-100: #CDD5E3;
+  --color-navy-200: #9BADC5;
+  --color-navy-300: #00B0B9;
+  --color-navy-400: #3E5E89;
+  --color-navy-500: #1B3A6B;
+  --color-navy-600: #1B2A4A;
+  --color-navy-700: #152238;
+  --color-navy-800: #0F1A28;
+  --color-navy-900: #091018;
+}
+
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #F5F1EB;
+  --foreground: #1B2A4A;
+  --brand:      #FF4A1C;
+  --navy:       #1B2A4A;
 }
 
 body {

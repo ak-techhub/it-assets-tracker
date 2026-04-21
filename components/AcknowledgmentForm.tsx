@@ -8,7 +8,7 @@ import EmailNotificationModal, { EmailPayload } from "@/components/EmailNotifica
 import {
   CheckCircle2, Truck, Package, CalendarDays, User,
   MapPin, Hash, Building2, Store, Send, ClipboardList,
-  Mail, Pencil, X, Bell, Save,
+  Mail, Pencil, X, Bell, Save, RotateCcw,
 } from "lucide-react";
 
 interface Props {
@@ -21,7 +21,7 @@ type Tab = "employee" | "itdispatch";
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
-// ── Email helpers ─────────────────────────────────────────────────────────────
+// ── Email helpers ──────────────────────────────────────────────────────────────
 
 function empEmail(name: string) { return findEmailByName(name); }
 
@@ -31,22 +31,7 @@ function buildReadyEmail(request: AccessoryRequest, items: AccessoryItem[]): Ema
     to: empEmail(request.employeeName),
     employeeName: request.employeeName,
     subject: `IT Assets — Your Accessories Are Ready for Collection`,
-    body: `Dear ${request.employeeName},
-
-We are pleased to inform you that the following IT accessories are now ready for collection at the office.
-
-Employee : ${request.employeeName}
-
-ITEMS READY:
-${lines}
-
-Please visit the IT desk at your earliest convenience to collect your accessories.
-Bring this email or your employee ID for reference.
-
-If you need the items shipped to your address instead, please reply to this email.
-
-Thank you,
-IT Assets Team`,
+    body: `Dear ${request.employeeName},\n\nWe are pleased to inform you that the following IT accessories are now ready for collection at the office.\n\nEmployee : ${request.employeeName}\n\nITEMS READY:\n${lines}\n\nPlease visit the IT desk at your earliest convenience to collect your accessories.\nBring this email or your employee ID for reference.\n\nIf you need the items shipped to your address instead, please reply to this email.\n\nThank you,\nIT Assets Team`,
   };
 }
 
@@ -62,20 +47,7 @@ function buildCollectionEmail(request: AccessoryRequest, actionedItems: Accessor
     to: empEmail(request.employeeName),
     employeeName: request.employeeName,
     subject: `IT Assets — Acknowledgment Confirmation for ${request.employeeName}`,
-    body: `Dear ${request.employeeName},
-
-This is to confirm that the following IT accessories have been acknowledged on ${dateStr}.
-
-Employee        : ${request.employeeName}
-Acknowledged By : ${acknowledgedBy}
-
-ITEMS:
-${lines}
-
-If you have any questions, please reach out to the IT team.
-
-Thank you,
-IT Assets Team`,
+    body: `Dear ${request.employeeName},\n\nThis is to confirm that the following IT accessories have been acknowledged on ${dateStr}.\n\nEmployee        : ${request.employeeName}\nAcknowledged By : ${acknowledgedBy}\n\nITEMS:\n${lines}\n\nIf you have any questions, please reach out to the IT team.\n\nThank you,\nIT Assets Team`,
   };
 }
 
@@ -89,26 +61,11 @@ function buildITDispatchEmail(
     to: empEmail(request.employeeName),
     employeeName: request.employeeName,
     subject: `IT Assets — Shipment Initiated for ${request.employeeName}`,
-    body: `Dear ${request.employeeName},
-
-We would like to inform you that your IT accessories have been dispatched.
-
-Employee      : ${request.employeeName}
-Shipment Type : ${shipLabel}
-Initiated Date: ${formatDate(initiatedDate)}
-Initiated By  : ${initiatedBy}${notes ? `\nNotes/Tracking: ${notes}` : ""}
-
-ITEMS DISPATCHED:
-${lines}
-
-Please ensure you are available to receive the shipment. If you have any questions, contact the IT team.
-
-Thank you,
-IT Assets Team`,
+    body: `Dear ${request.employeeName},\n\nWe would like to inform you that your IT accessories have been dispatched.\n\nEmployee      : ${request.employeeName}\nShipment Type : ${shipLabel}\nInitiated Date: ${formatDate(initiatedDate)}\nInitiated By  : ${initiatedBy}${notes ? `\nNotes/Tracking: ${notes}` : ""}\n\nITEMS DISPATCHED:\n${lines}\n\nPlease ensure you are available to receive the shipment. If you have any questions, contact the IT team.\n\nThank you,\nIT Assets Team`,
   };
 }
 
-// ── Per-item edit draft ───────────────────────────────────────────────────────
+// ── Per-item edit draft ────────────────────────────────────────────────────────
 
 interface EditDraft {
   collectionMethod: "collect" | "ship" | undefined;
@@ -126,123 +83,126 @@ function draftFrom(item: AccessoryItem): EditDraft {
   };
 }
 
+// ── Checkbox helper ───────────────────────────────────────────────────────────
+
+function Checkbox({ checked }: { checked: boolean }) {
+  return (
+    <div className={cn(
+      "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors",
+      checked ? "border-indigo-500 bg-indigo-500" : "border-slate-300 bg-white"
+    )}>
+      {checked && (
+        <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
+          <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowledged }: Props) {
   const [tab, setTab] = useState<Tab>("employee");
 
-  /* ── Employee tab ── */
   const [items, setItems] = useState<AccessoryItem[]>(() =>
     request.accessories.map((a) => ({ ...a }))
   );
-  // Per-item inline edit drafts (keyed by item id)
+
+  // ── Employee tab state ──
+  const [empChecked, setEmpChecked]         = useState<Set<string>>(new Set());
+  const [empAction, setEmpAction]           = useState<"collect" | "ship" | "">("");
+  const [empCollectedDate, setEmpCollectedDate] = useState(todayISO());
+  const [acknowledgedBy, setAcknowledgedBy] = useState("");
+  const [empSaved, setEmpSaved]             = useState(false);
+  const [empErrors, setEmpErrors]           = useState<string[]>([]);
+
+  // Inline edit for completed items
   const [editDrafts, setEditDrafts]   = useState<Record<string, EditDraft>>({});
   const [editingIds, setEditingIds]   = useState<Set<string>>(new Set());
-  const [acknowledgedBy, setAcknowledgedBy] = useState("");
-  const [empSaved, setEmpSaved]       = useState(false);
-  const [empErrors, setEmpErrors]     = useState<string[]>([]);
 
-  /* ── IT Dispatch tab ── */
-  const [itChecked, setItChecked]     = useState<Set<string>>(new Set());
+  // ── IT Dispatch tab state ──
+  const [itChecked, setItChecked]       = useState<Set<string>>(new Set());
   const [bulkShipType, setBulkShipType] = useState<ITShipmentType | "">("");
-  const [bulkDate, setBulkDate]       = useState(todayISO());
-  const [bulkBy, setBulkBy]           = useState("");
-  const [bulkNotes, setBulkNotes]     = useState("");
-  const [itSaved, setItSaved]         = useState(false);
-  const [itErrors, setItErrors]       = useState<string[]>([]);
+  const [bulkDate, setBulkDate]         = useState(todayISO());
+  const [bulkBy, setBulkBy]             = useState("");
+  const [bulkNotes, setBulkNotes]       = useState("");
+  const [itSaved, setItSaved]           = useState(false);
+  const [itErrors, setItErrors]         = useState<string[]>([]);
 
-  /* ── Email modal ── */
   const [emailPayload, setEmailPayload] = useState<EmailPayload | null>(null);
 
-  const pendingItems = useMemo(() => items.filter((i) => i.status === "pending"), [items]);
-  const doneItems    = useMemo(() => items.filter((i) => i.status !== "pending"), [items]);
+  // ── Derived lists ──────────────────────────────────────────────────────────
+  // Work in Progress = pending collection AND SN state != Closed Complete
+  const wipItems           = useMemo(() => items.filter((i) => i.status === "pending" && i.state !== "Closed Complete"), [items]);
+  // Closed Complete in SN but not yet actioned → read-only info, no action needed
+  const closedPendingItems = useMemo(() => items.filter((i) => i.status === "pending" && i.state === "Closed Complete"), [items]);
+  const doneItems          = useMemo(() => items.filter((i) => i.status !== "pending"), [items]);
+  const pendingCount       = wipItems.length + closedPendingItems.length;
 
-  const setItemField = (id: string, field: keyof AccessoryItem, value: string) =>
-    setItems((prev) => prev.map((i) => (i.id === id ? { ...i, [field]: value } : i)));
+  // IT dispatch split
+  const undispatchedItems  = useMemo(() => items.filter((i) => !i.itAction && i.state !== "Closed Complete"), [items]);
+  const closedNoDispatch   = useMemo(() => items.filter((i) => !i.itAction && i.state === "Closed Complete"), [items]);
+  const dispatchedItems    = useMemo(() => items.filter((i) => !!i.itAction), [items]);
 
-  // ── Inline edit helpers ──────────────────────────────────────────────────────
-  const startEdit = (item: AccessoryItem) => {
-    setEditDrafts((prev) => ({ ...prev, [item.id]: draftFrom(item) }));
-    setEditingIds((prev) => new Set(prev).add(item.id));
-  };
-
-  const cancelEdit = (id: string) => {
-    setEditingIds((prev) => { const s = new Set(prev); s.delete(id); return s; });
-  };
-
-  const setDraftField = (id: string, field: keyof EditDraft, value: string) =>
-    setEditDrafts((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
-
-  const applyEdit = (item: AccessoryItem) => {
-    const draft = editDrafts[item.id];
-    if (!draft || !draft.collectionMethod) return;
-
-    const updatedItem: AccessoryItem = {
-      ...item,
-      collectionMethod: draft.collectionMethod,
-      collectedDate:    draft.collectedDate || undefined,
-      deliveryAddress:  draft.deliveryAddress,
-      notes:            draft.notes || undefined,
-      status:           draft.collectionMethod === "collect" ? "collected" : "shipped",
-    };
-    const updatedList = items.map((i) => (i.id === item.id ? updatedItem : i));
-    const allDone = updatedList.every((i) => i.status !== "pending");
-    const anyDone = updatedList.some((i) => i.status !== "pending");
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const save = (updated: AccessoryItem[]) => {
+    const allDone = updated.every((i) => i.status !== "pending");
+    const anyDone = updated.some((i) => i.status !== "pending");
     const updatedReq: AccessoryRequest = {
       ...request,
-      accessories: updatedList,
+      accessories: updated,
       status: allDone ? "fulfilled" : anyDone ? "partially_fulfilled" : "pending",
     };
     updateRequest(updatedReq);
-    setItems(updatedList);
-    cancelEdit(item.id);
+    setItems(updated);
     onAcknowledged();
   };
 
-  // ── Employee submit ──────────────────────────────────────────────────────────
+  const toggleEmp = (id: string) =>
+    setEmpChecked((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const toggleIt = (id: string) =>
+    setItChecked((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  // ── Employee submit ────────────────────────────────────────────────────────
   const handleEmpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const errs: string[] = [];
-    const touched = items.filter((i) => i.status === "pending" && i.collectionMethod);
-    if (touched.length === 0) errs.push("Select Collect or Ship for at least one item.");
-    touched.forEach((i) => {
-      if (i.collectionMethod === "collect" && !i.collectedDate)
-        errs.push(`Set a collection date for "${i.name}".`);
-    });
+    if (empChecked.size === 0)  errs.push("Tick at least one item.");
+    if (!empAction)             errs.push("Choose an action — Collected from Office or Request Shipment.");
+    if (empAction === "collect" && !empCollectedDate) errs.push("Set a collection date.");
     if (!acknowledgedBy.trim()) errs.push("Enter your name or employee ID to acknowledge.");
     if (errs.length > 0) { setEmpErrors(errs); return; }
     setEmpErrors([]);
 
     const now = new Date().toISOString();
     const updated = items.map((item) => {
-      if (item.status !== "pending" || !item.collectionMethod) return item;
+      if (!empChecked.has(item.id) || item.status !== "pending") return item;
       return {
         ...item,
-        status: item.collectionMethod === "collect" ? ("collected" as const) : ("shipped" as const),
-        acknowledgedAt: now,
-        acknowledgedBy: acknowledgedBy.trim(),
+        status:           (empAction === "collect" ? "collected" : "shipped") as "collected" | "shipped",
+        collectionMethod: empAction as "collect" | "ship",
+        collectedDate:    empAction === "collect" ? empCollectedDate : undefined,
+        acknowledgedAt:   now,
+        acknowledgedBy:   acknowledgedBy.trim(),
       };
     });
-    const updatedReq: AccessoryRequest = { ...request, accessories: updated };
-    updatedReq.status = updated.every((i) => i.status !== "pending") ? "fulfilled"
-      : updated.some((i) => i.status !== "pending") ? "partially_fulfilled" : "pending";
-
-    updateRequest(updatedReq);
-    setItems(updated);
+    save(updated);
     setEmpSaved(true);
-    onAcknowledged();
+    setEmpChecked(new Set());
 
-    const actionedNow = updated.filter((i) => i.acknowledgedAt === now);
-    if (actionedNow.length > 0)
-      setEmailPayload(buildCollectionEmail(request, actionedNow, acknowledgedBy.trim()));
+    const actioned = updated.filter((i) => i.acknowledgedAt === now);
+    if (actioned.length > 0)
+      setEmailPayload(buildCollectionEmail(request, actioned, acknowledgedBy.trim()));
   };
 
-  // ── IT Dispatch apply ────────────────────────────────────────────────────────
+  // ── IT Dispatch submit ─────────────────────────────────────────────────────
   const handleITApply = () => {
     const errs: string[] = [];
     if (itChecked.size === 0) errs.push("Select at least one item.");
-    if (!bulkShipType) errs.push("Select shipment type.");
-    if (!bulkBy) errs.push("Select who is initiating.");
+    if (!bulkShipType)        errs.push("Select shipment type.");
+    if (!bulkBy)              errs.push("Select who is initiating.");
     if (errs.length > 0) { setItErrors(errs); return; }
     setItErrors([]);
 
@@ -253,7 +213,10 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
       notes:         bulkNotes.trim() || undefined,
     };
     const dispatched = items.filter((i) => itChecked.has(i.id));
-    const updated    = items.map((i) => itChecked.has(i.id) ? { ...i, itAction: action } : i);
+    const updated    = items.map((i) => itChecked.has(i.id)
+      ? { ...i, itAction: action, status: "shipped" as const, collectionMethod: "ship" as const }
+      : i
+    );
     updateRequest({ ...request, accessories: updated });
     setItems(updated);
     setItSaved(true);
@@ -263,10 +226,48 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
     setEmailPayload(buildITDispatchEmail(request, dispatched, bulkShipType as ITShipmentType, bulkDate, bulkBy, bulkNotes));
   };
 
-  const toggleItItem = (id: string) =>
-    setItChecked((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  // ── Inline edit (completed items) ─────────────────────────────────────────
+  const startEdit  = (item: AccessoryItem) => {
+    setEditDrafts((p) => ({ ...p, [item.id]: draftFrom(item) }));
+    setEditingIds((p) => new Set(p).add(item.id));
+  };
+  const cancelEdit = (id: string) =>
+    setEditingIds((p) => { const s = new Set(p); s.delete(id); return s; });
+  const setDraftField = (id: string, field: keyof EditDraft, value: string) =>
+    setEditDrafts((p) => ({ ...p, [id]: { ...p[id], [field]: value } }));
 
-  // ── Info bar ─────────────────────────────────────────────────────────────────
+  const applyEdit = (item: AccessoryItem) => {
+    const draft = editDrafts[item.id];
+    if (!draft?.collectionMethod) return;
+    const updated = items.map((i) => i.id !== item.id ? i : {
+      ...i,
+      collectionMethod: draft.collectionMethod,
+      collectedDate:    draft.collectionMethod === "collect" ? draft.collectedDate || undefined : undefined,
+      deliveryAddress:  draft.deliveryAddress,
+      notes:            draft.notes || undefined,
+      status:           (draft.collectionMethod === "collect" ? "collected" : "shipped") as "collected" | "shipped",
+    });
+    save(updated);
+    cancelEdit(item.id);
+  };
+
+  const resetItem = (item: AccessoryItem) => {
+    const updated = items.map((i) => i.id !== item.id ? i : {
+      ...i,
+      status: "pending" as const,
+      collectionMethod: undefined,
+      collectedDate: undefined,
+      acknowledgedBy: undefined,
+      acknowledgedAt: undefined,
+      itAction: undefined,
+      notes: undefined,
+    });
+    save(updated);
+    cancelEdit(item.id);
+    setEmpSaved(false);
+  };
+
+  // ── Info bar ───────────────────────────────────────────────────────────────
   const InfoBar = () => (
     <div className="bg-slate-50 px-5 py-3 grid sm:grid-cols-2 gap-2 text-xs border-b border-slate-200">
       <div className="flex items-center gap-1.5 text-slate-600">
@@ -290,11 +291,53 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
       )}
       <div className="flex items-center gap-1.5 text-slate-600">
         <ClipboardList size={13} className="text-slate-400" />
-        <span>{request.accessories.length} item(s) &bull; {pendingItems.length} pending</span>
+        <span>
+          {request.accessories.length} item(s) &bull; {wipItems.length} WIP
+          {closedPendingItems.length > 0 && <> &bull; {closedPendingItems.length} closed (SN)</>}
+          {doneItems.length > 0 && <> &bull; {doneItems.length} actioned</>}
+        </span>
       </div>
     </div>
   );
 
+  // ── Reusable item card shell ───────────────────────────────────────────────
+  const ItemCard = ({ item, checked, onClick, accent }: {
+    item: AccessoryItem; checked?: boolean; onClick?: () => void; accent?: string;
+  }) => (
+    <div
+      onClick={onClick}
+      className={cn(
+        "flex items-start gap-3 border rounded-xl px-4 py-3 transition-colors",
+        onClick ? "cursor-pointer select-none" : "",
+        checked === true  ? "border-indigo-400 bg-indigo-50" :
+        accent            ? accent :
+        "border-slate-200 bg-white hover:border-indigo-200"
+      )}
+    >
+      {onClick !== undefined && <Checkbox checked={!!checked} />}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+            <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.ritm}</p>
+          </div>
+          <span className={cn("text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0", statusColor(item.state))}>
+            SN: {item.state}
+          </span>
+        </div>
+        <p className="text-[11px] text-slate-500 mt-1">
+          Qty: {item.quantity} &bull; {deliveryLabel(item.deliveryMethod)}
+        </p>
+        {item.deliveryAddress && (
+          <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[240px]" title={item.deliveryAddress}>
+            <MapPin size={9} className="inline mr-0.5" />{item.deliveryAddress.split("\n")[0]}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
   return (
     <>
       {emailPayload && (
@@ -312,9 +355,9 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
               : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
           )}>
             <User size={15} /> Employee Acknowledgment
-            {pendingItems.length > 0 && (
+            {pendingCount > 0 && (
               <span className="ml-1 bg-amber-100 text-amber-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
-                {pendingItems.length}
+                {wipItems.length} WIP{closedPendingItems.length > 0 ? ` · ${closedPendingItems.length} closed` : ""}
               </span>
             )}
           </button>
@@ -324,15 +367,15 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
               : "border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50"
           )}>
             <Send size={15} /> IT Dispatch
-            {items.some((i) => i.itAction) && (
+            {dispatchedItems.length > 0 && (
               <span className="ml-1 bg-indigo-100 text-indigo-700 text-[10px] font-semibold px-1.5 py-0.5 rounded-full">
-                {items.filter((i) => i.itAction).length}
+                {dispatchedItems.length} dispatched
               </span>
             )}
           </button>
         </div>
 
-        {/* ═══ EMPLOYEE TAB ═══ */}
+        {/* ═══ EMPLOYEE TAB ═══════════════════════════════════════════════════ */}
         {tab === "employee" && (
           <form onSubmit={handleEmpSubmit} className="p-5 space-y-4">
 
@@ -340,135 +383,143 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
             <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
               <Bell size={15} className="text-amber-500 shrink-0" />
               <p className="text-xs text-amber-800 flex-1">Notify the employee their accessories are ready before they collect.</p>
-              <button type="button"
-                onClick={() => setEmailPayload(buildReadyEmail(request, items))}
+              <button type="button" onClick={() => setEmailPayload(buildReadyEmail(request, items))}
                 className="flex items-center gap-1.5 text-xs font-medium text-amber-700 border border-amber-300 bg-white hover:bg-amber-50 rounded-lg px-3 py-1.5 whitespace-nowrap transition-colors">
                 <Mail size={13} /> Notify Ready
               </button>
             </div>
 
-            {/* Pending items */}
-            {pendingItems.length > 0 && (
-              <div className="space-y-3">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Pending — select action for each</p>
-                {pendingItems.map((item) => (
-                  <div key={item.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-                    <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
-                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.ritm} &bull; {item.reqNumber}</p>
-                        <div className="flex flex-wrap gap-2 mt-1 text-[11px] text-slate-500">
-                          <span>Qty: {item.quantity}</span>
-                          <span>&bull; <CalendarDays size={10} className="inline mr-0.5" />{formatDate(item.openedDate)}</span>
-                        </div>
-                      </div>
-                      <span className={cn("text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0", statusColor(item.state))}>
-                        {item.state}
-                      </span>
-                    </div>
-
-                    <div className="mx-4 mb-2">
-                      <p className="text-[11px] font-medium text-slate-500 mb-1">
-                        <MapPin size={10} className="inline mr-1" />{deliveryLabel(item.deliveryMethod)}
-                      </p>
-                      <textarea rows={2} value={item.deliveryAddress ?? ""}
-                        onChange={(e) => setItemField(item.id, "deliveryAddress", e.target.value)}
-                        placeholder="Delivery address"
-                        className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
-                    </div>
-
-                    <div className="px-4 pb-3 space-y-2">
-                      <div className="flex gap-2">
-                        {(["collect", "ship"] as const).map((method) => (
-                          <label key={method} className={cn(
-                            "flex-1 flex items-center gap-1.5 border rounded-lg px-3 py-2 cursor-pointer text-xs transition-colors",
-                            item.collectionMethod === method
-                              ? method === "collect" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-blue-500 bg-blue-50 text-blue-700"
-                              : method === "collect" ? "border-slate-200 hover:border-emerald-300" : "border-slate-200 hover:border-blue-300"
-                          )}>
-                            <input type="radio" name={`act-${item.id}`} value={method}
-                              checked={item.collectionMethod === method}
-                              onChange={() => setItemField(item.id, "collectionMethod", method)}
-                              className="hidden" />
-                            {method === "collect" ? <CheckCircle2 size={13} /> : <Truck size={13} />}
-                            {method === "collect" ? "Collected from Office" : "Request Shipment"}
-                          </label>
-                        ))}
-                      </div>
-                      {item.collectionMethod === "collect" && (
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] text-slate-500 w-28 shrink-0">Collected Date *</label>
-                          <input type="date" value={item.collectedDate ?? ""} max={todayISO()}
-                            onChange={(e) => setItemField(item.id, "collectedDate", e.target.value)}
-                            className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-slate-500 w-28 shrink-0">Notes</label>
-                        <input type="text" value={item.notes ?? ""}
-                          onChange={(e) => setItemField(item.id, "notes", e.target.value)}
-                          placeholder="Optional"
-                          className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                      </div>
-                    </div>
-                  </div>
+            {/* ── Step 1: Select WIP items ── */}
+            {wipItems.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <Package size={12} /> Step 1 — Select Work in Progress items
+                  </p>
+                  <button type="button"
+                    onClick={() => setEmpChecked(empChecked.size === wipItems.length
+                      ? new Set() : new Set(wipItems.map((i) => i.id)))}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                    {empChecked.size === wipItems.length ? "Deselect All" : "Select All"}
+                  </button>
+                </div>
+                {wipItems.map((item) => (
+                  <ItemCard key={item.id} item={item} checked={empChecked.has(item.id)} onClick={() => toggleEmp(item.id)} />
                 ))}
               </div>
             )}
 
-            {pendingItems.length === 0 && !empSaved && doneItems.length > 0 && (
+            {/* ── Step 2: Choose action ── */}
+            {wipItems.length > 0 && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                  <Send size={12} /> Step 2 — Choose Action for Selected Items
+                </p>
+
+                <div className="flex gap-2">
+                  {([
+                    ["collect", "Collected from Office", CheckCircle2, "border-emerald-500 bg-emerald-50 text-emerald-700", "border-slate-200 hover:border-emerald-300"],
+                    ["ship",    "Request Shipment",      Truck,         "border-blue-500 bg-blue-50 text-blue-700",           "border-slate-200 hover:border-blue-300"],
+                  ] as const).map(([val, label, Icon, activeClass, inactiveClass]) => (
+                    <label key={val} className={cn(
+                      "flex-1 flex items-center gap-2 border rounded-lg px-3 py-2.5 cursor-pointer text-sm transition-colors",
+                      empAction === val ? activeClass : inactiveClass
+                    )}>
+                      <input type="radio" name="emp-action" value={val}
+                        checked={empAction === val}
+                        onChange={() => setEmpAction(val)} className="hidden" />
+                      <Icon size={15} /> {label}
+                    </label>
+                  ))}
+                </div>
+
+                {empAction === "collect" && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-600 w-28 shrink-0 font-medium">Collected Date *</label>
+                    <input type="date" value={empCollectedDate} max={todayISO()}
+                      onChange={(e) => setEmpCollectedDate(e.target.value)}
+                      className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-600 w-28 shrink-0 font-medium">Acknowledged by *</label>
+                  <input type="text" value={acknowledgedBy}
+                    onChange={(e) => setAcknowledgedBy(e.target.value)}
+                    placeholder="Your name or employee ID"
+                    className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+              </div>
+            )}
+
+            {/* All done */}
+            {wipItems.length === 0 && closedPendingItems.length === 0 && !empSaved && doneItems.length > 0 && (
               <div className="text-center py-6 text-green-600 flex flex-col items-center gap-2">
                 <CheckCircle2 size={28} />
                 <p className="font-medium text-sm">All accessories fulfilled!</p>
               </div>
             )}
 
-            {pendingItems.length > 0 && (
-              <>
-                <div className="flex items-center gap-3">
-                  <label className="text-sm font-medium text-slate-700 shrink-0">Acknowledged by *</label>
-                  <input type="text" value={acknowledgedBy}
-                    onChange={(e) => setAcknowledgedBy(e.target.value)}
-                    placeholder="Your name or employee ID"
-                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                </div>
-                {empErrors.length > 0 && (
-                  <ul className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
-                    {empErrors.map((e, i) => <li key={i} className="text-xs text-red-600">&bull; {e}</li>)}
-                  </ul>
-                )}
-                {empSaved ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-center gap-2 py-3 text-green-700 bg-green-50 border border-green-200 rounded-xl text-sm font-medium">
-                      <CheckCircle2 size={16} /> Acknowledgment saved!
-                    </div>
-                    <button type="button"
-                      onClick={() => setEmailPayload(buildCollectionEmail(request, doneItems, acknowledgedBy))}
-                      className="w-full flex items-center justify-center gap-2 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-xl py-2.5 text-sm transition-colors">
-                      <Mail size={15} /> Send Collection Confirmation Email
-                    </button>
+            {/* Errors */}
+            {empErrors.length > 0 && (
+              <ul className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-1">
+                {empErrors.map((e, i) => <li key={i} className="text-xs text-red-600">&bull; {e}</li>)}
+              </ul>
+            )}
+
+            {/* Submit / saved */}
+            {wipItems.length > 0 && (
+              empSaved ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-center gap-2 py-3 text-green-700 bg-green-50 border border-green-200 rounded-xl text-sm font-medium">
+                    <CheckCircle2 size={16} /> Acknowledgment saved!
                   </div>
-                ) : (
-                  <button type="submit"
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl py-2.5 text-sm transition-colors">
-                    Submit Acknowledgment
+                  <button type="button"
+                    onClick={() => setEmailPayload(buildCollectionEmail(request, doneItems, acknowledgedBy))}
+                    className="w-full flex items-center justify-center gap-2 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-xl py-2.5 text-sm transition-colors">
+                    <Mail size={15} /> Send Collection Confirmation Email
                   </button>
-                )}
-              </>
+                </div>
+              ) : (
+                <button type="submit" disabled={empChecked.size === 0}
+                  className={cn(
+                    "w-full font-semibold rounded-xl py-3 text-sm flex items-center justify-center gap-2 transition-colors shadow-sm",
+                    empChecked.size > 0
+                      ? "bg-indigo-600 hover:bg-indigo-700 text-white"
+                      : "bg-indigo-100 text-indigo-300 cursor-not-allowed"
+                  )}>
+                  <Save size={15} />
+                  {empChecked.size > 0
+                    ? `Submit Acknowledgment — ${empChecked.size} item${empChecked.size !== 1 ? "s" : ""} selected`
+                    : "Select items above to submit"}
+                </button>
+              )
+            )}
+
+            {/* ── Closed Complete — info only, no action needed ── */}
+            {closedPendingItems.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Closed in ServiceNow — no action required
+                </p>
+                <p className="text-[11px] text-slate-400">These items are already Closed Complete in ServiceNow. Use the IT Dispatch tab to record shipment if needed.</p>
+                {closedPendingItems.map((item) => (
+                  <ItemCard key={item.id} item={item} accent="border-green-200 bg-green-50/40" />
+                ))}
+              </div>
             )}
 
             {/* ── Completed items with inline Edit ── */}
             {doneItems.length > 0 && (
               <div className="pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Completed ({doneItems.length})</p>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">Actioned ({doneItems.length})</p>
                   <button type="button"
                     onClick={() => setEmailPayload(buildCollectionEmail(request, doneItems, acknowledgedBy || "IT Team"))}
                     className="flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-700">
                     <Mail size={12} /> Email summary
                   </button>
                 </div>
-
                 <div className="space-y-2">
                   {doneItems.map((item) => {
                     const isEditing = editingIds.has(item.id);
@@ -478,21 +529,22 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                         "border rounded-xl overflow-hidden",
                         isEditing ? "border-orange-300 bg-orange-50/30" : "border-slate-100 bg-slate-50"
                       )}>
-                        {/* Summary row */}
                         <div className="flex items-start justify-between px-3 py-2.5 gap-3 text-xs">
                           <div className="min-w-0">
                             <p className="font-medium text-slate-700">{item.name}</p>
                             <p className="text-slate-400 font-mono text-[10px] mt-0.5">{item.ritm}</p>
                             {item.deliveryAddress && !isEditing && (
                               <p className="text-[10px] text-slate-400 mt-0.5 max-w-[200px] truncate" title={item.deliveryAddress}>
-                                <MapPin size={9} className="inline mr-0.5" />
-                                {item.deliveryAddress.split("\n")[0]}
+                                <MapPin size={9} className="inline mr-0.5" />{item.deliveryAddress.split("\n")[0]}
                               </p>
                             )}
                           </div>
                           <div className="text-right shrink-0 space-y-1">
-                            <span className={cn("block font-medium px-1.5 py-0.5 rounded-full", statusColor(item.status))}>
+                            <span className={cn("block text-[11px] font-medium px-1.5 py-0.5 rounded-full", statusColor(item.status))}>
                               {item.status}
+                            </span>
+                            <span className={cn("block text-[10px] font-medium px-1.5 py-0.5 rounded-full", statusColor(item.state))}>
+                              SN: {item.state}
                             </span>
                             {item.collectedDate && <p className="text-slate-400">{formatDate(item.collectedDate)}</p>}
                             {item.acknowledgedBy && (
@@ -513,15 +565,11 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                             )}
                           </div>
                         </div>
-
-                        {/* Inline edit panel */}
                         {isEditing && draft && (
                           <div className="border-t border-orange-200 px-3 py-3 space-y-2 bg-white">
                             <p className="text-[11px] font-semibold text-orange-600 uppercase tracking-wide flex items-center gap-1">
                               <Pencil size={10} /> Edit — {item.name}
                             </p>
-
-                            {/* Delivery address */}
                             <div>
                               <label className="text-[11px] text-slate-500 block mb-1">
                                 <MapPin size={9} className="inline mr-1" />{deliveryLabel(item.deliveryMethod)}
@@ -530,8 +578,6 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                                 onChange={(e) => setDraftField(item.id, "deliveryAddress", e.target.value)}
                                 className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-300 resize-none" />
                             </div>
-
-                            {/* Action */}
                             <div className="flex gap-2">
                               {(["collect", "ship"] as const).map((method) => (
                                 <label key={method} className={cn(
@@ -549,7 +595,6 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                                 </label>
                               ))}
                             </div>
-
                             {draft.collectionMethod === "collect" && (
                               <div className="flex items-center gap-2">
                                 <label className="text-[11px] text-slate-500 w-28 shrink-0">Collected Date</label>
@@ -558,7 +603,6 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                                   className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-orange-300" />
                               </div>
                             )}
-
                             <div className="flex items-center gap-2">
                               <label className="text-[11px] text-slate-500 w-28 shrink-0">Notes</label>
                               <input type="text" value={draft.notes}
@@ -566,7 +610,6 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                                 placeholder="Optional"
                                 className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-orange-300" />
                             </div>
-
                             <div className="flex gap-2 pt-1">
                               <button type="button" onClick={() => cancelEdit(item.id)}
                                 className="flex-1 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-lg py-2 text-xs font-medium transition-colors">
@@ -576,13 +619,15 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
                                 disabled={!draft.collectionMethod}
                                 className={cn(
                                   "flex-1 flex items-center justify-center gap-1.5 rounded-lg py-2 text-xs font-medium transition-colors",
-                                  draft.collectionMethod
-                                    ? "bg-orange-500 hover:bg-orange-600 text-white"
-                                    : "bg-orange-100 text-orange-300 cursor-not-allowed"
+                                  draft.collectionMethod ? "bg-orange-500 hover:bg-orange-600 text-white" : "bg-orange-100 text-orange-300 cursor-not-allowed"
                                 )}>
                                 <Save size={12} /> Update
                               </button>
                             </div>
+                            <button type="button" onClick={() => resetItem(item)}
+                              className="w-full flex items-center justify-center gap-1.5 border border-red-300 text-red-600 hover:bg-red-50 rounded-lg py-2 text-xs font-medium transition-colors mt-1">
+                              <RotateCcw size={11} /> Reset to Work in Progress (undo)
+                            </button>
                           </div>
                         )}
                       </div>
@@ -594,152 +639,184 @@ export default function AcknowledgmentForm({ request, assigneeOptions, onAcknowl
           </form>
         )}
 
-        {/* ═══ IT DISPATCH TAB ═══ */}
+        {/* ═══ IT DISPATCH TAB ════════════════════════════════════════════════ */}
         {tab === "itdispatch" && (
           <div className="p-5 space-y-4">
-            <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
-              <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-1.5">
-                <Send size={12} /> IT Dispatch Action
-              </p>
-              <p className="text-xs text-indigo-500">Tick items below, fill in details, then click Apply.</p>
 
-              <div className="flex gap-2">
-                {([["ship_office", "Shipment from Office", Building2], ["ship_vendor", "Shipment via Vendor", Store]] as const).map(([val, label, Icon]) => (
-                  <label key={val} className={cn(
-                    "flex-1 flex items-center gap-2 border rounded-lg px-3 py-2.5 cursor-pointer text-sm transition-colors",
-                    bulkShipType === val
-                      ? val === "ship_office" ? "border-indigo-500 bg-white text-indigo-700 shadow-sm" : "border-violet-500 bg-white text-violet-700 shadow-sm"
-                      : "border-indigo-200 bg-white/60 text-indigo-500 hover:bg-white"
-                  )}>
-                    <input type="radio" name="bulk-ship" value={val}
-                      checked={bulkShipType === val}
-                      onChange={() => setBulkShipType(val)} className="hidden" />
-                    <Icon size={15} /> {label}
-                  </label>
-                ))}
-              </div>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Initiated Date</label>
-                  <input type="date" value={bulkDate} max={todayISO()}
-                    onChange={(e) => setBulkDate(e.target.value)}
-                    className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Initiated By</label>
-                  <select value={bulkBy} onChange={(e) => setBulkBy(e.target.value)}
-                    className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                    <option value="">— Select assignee —</option>
-                    {assigneeOptions.map((n) => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Notes</label>
-                <input type="text" value={bulkNotes} onChange={(e) => setBulkNotes(e.target.value)}
-                  placeholder="Tracking ID, courier…"
-                  className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-              </div>
-
-              {itErrors.length > 0 && (
-                <ul className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
-                  {itErrors.map((e, i) => <li key={i} className="text-xs text-red-600">&bull; {e}</li>)}
-                </ul>
-              )}
-              {itSaved && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                    <CheckCircle2 size={13} /> IT Dispatch saved.
-                  </div>
+            {/* ── Step 1: Undispatched items (no itAction) ── */}
+            {undispatchedItems.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-1.5">
+                    <Package size={12} /> Step 1 — Select Items to Dispatch
+                  </p>
                   <button type="button"
-                    onClick={() => {
-                      const d = items.filter((i) => i.itAction);
-                      if (d.length && d[0].itAction) {
-                        const a = d[0].itAction;
-                        setEmailPayload(buildITDispatchEmail(request, d, a.shipmentType, a.initiatedDate, a.initiatedBy, a.notes ?? ""));
-                      }
-                    }}
-                    className="w-full flex items-center justify-center gap-2 border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 font-medium rounded-xl py-2.5 text-sm transition-colors">
-                    <Mail size={15} /> Send Shipment Notification Email
+                    onClick={() => setItChecked(itChecked.size === undispatchedItems.length
+                      ? new Set() : new Set(undispatchedItems.map((i) => i.id)))}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                    {itChecked.size === undispatchedItems.length ? "Deselect All" : "Select All"}
                   </button>
                 </div>
-              )}
+                {undispatchedItems.map((item) => (
+                  <ItemCard key={item.id} item={item} checked={itChecked.has(item.id)} onClick={() => toggleIt(item.id)} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-4 text-green-600 flex flex-col items-center gap-1">
+                <CheckCircle2 size={22} />
+                <p className="text-sm font-medium">All items have been dispatched.</p>
+              </div>
+            )}
 
-              <button type="button" onClick={handleITApply} disabled={itChecked.size === 0}
-                className={cn(
-                  "w-full font-medium rounded-xl py-2.5 text-sm flex items-center justify-center gap-2 transition-colors",
-                  itChecked.size > 0 ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-indigo-100 text-indigo-300 cursor-not-allowed"
-                )}>
-                <Send size={14} />
-                Apply — {itChecked.size > 0 ? `${itChecked.size} item${itChecked.size !== 1 ? "s" : ""} selected` : "select items below"}
-              </button>
-            </div>
+            {/* ── Step 2: Dispatch details ── */}
+            {undispatchedItems.length > 0 && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <Send size={12} /> Step 2 — Fill Dispatch Details
+                </p>
+                <div className="flex gap-2">
+                  {([["ship_office", "Shipment from Office", Building2], ["ship_vendor", "Shipment via Vendor", Store]] as const).map(([val, label, Icon]) => (
+                    <label key={val} className={cn(
+                      "flex-1 flex items-center gap-2 border rounded-lg px-3 py-2.5 cursor-pointer text-sm transition-colors",
+                      bulkShipType === val
+                        ? val === "ship_office" ? "border-indigo-500 bg-white text-indigo-700 shadow-sm" : "border-violet-500 bg-white text-violet-700 shadow-sm"
+                        : "border-indigo-200 bg-white/60 text-indigo-500 hover:bg-white"
+                    )}>
+                      <input type="radio" name="bulk-ship" value={val}
+                        checked={bulkShipType === val} onChange={() => setBulkShipType(val)} className="hidden" />
+                      <Icon size={15} /> {label}
+                    </label>
+                  ))}
+                </div>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Initiated Date</label>
+                    <input type="date" value={bulkDate} max={todayISO()} onChange={(e) => setBulkDate(e.target.value)}
+                      className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Initiated By</label>
+                    <select value={bulkBy} onChange={(e) => setBulkBy(e.target.value)}
+                      className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                      <option value="">— Select assignee —</option>
+                      {assigneeOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-indigo-600 w-24 shrink-0 font-medium">Notes / Tracking</label>
+                  <input type="text" value={bulkNotes} onChange={(e) => setBulkNotes(e.target.value)}
+                    placeholder="Tracking ID, courier…"
+                    className="flex-1 border border-indigo-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                </div>
+              </div>
+            )}
 
-            {/* Item checklist */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">All Items ({items.length})</p>
+            {/* Errors / success */}
+            {itErrors.length > 0 && (
+              <ul className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 space-y-1">
+                {itErrors.map((e, i) => <li key={i} className="text-xs text-red-600">&bull; {e}</li>)}
+              </ul>
+            )}
+            {itSaved && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+                  <CheckCircle2 size={16} /> IT Dispatch saved successfully!
+                </div>
                 <button type="button"
-                  onClick={() => setItChecked(itChecked.size === items.length ? new Set() : new Set(items.map((i) => i.id)))}
-                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium">
-                  {itChecked.size === items.length ? "Deselect All" : "Select All"}
+                  onClick={() => {
+                    const last = dispatchedItems[0];
+                    if (last?.itAction)
+                      setEmailPayload(buildITDispatchEmail(request, dispatchedItems, last.itAction.shipmentType, last.itAction.initiatedDate, last.itAction.initiatedBy, last.itAction.notes ?? ""));
+                  }}
+                  className="w-full flex items-center justify-center gap-2 border border-indigo-200 bg-white hover:bg-indigo-50 text-indigo-700 font-medium rounded-xl py-2.5 text-sm transition-colors">
+                  <Mail size={15} /> Send Shipment Notification Email
                 </button>
               </div>
-              <div className="space-y-2">
-                {items.map((item) => {
-                  const checked = itChecked.has(item.id);
-                  return (
-                    <div key={item.id} onClick={() => toggleItItem(item.id)}
-                      className={cn(
-                        "flex items-start gap-3 border rounded-xl px-4 py-3 cursor-pointer transition-colors select-none",
-                        checked ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white hover:border-indigo-200"
-                      )}>
-                      <div className={cn(
-                        "w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 mt-0.5",
-                        checked ? "border-indigo-500 bg-indigo-500" : "border-slate-300"
-                      )}>
-                        {checked && (
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 12 12">
-                            <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{item.name}</p>
-                            <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.ritm}</p>
-                          </div>
-                          <div className="shrink-0 flex flex-col items-end gap-1">
-                            <span className={cn("text-[11px] font-medium px-1.5 py-0.5 rounded-full", statusColor(item.status))}>{item.status}</span>
-                            <span className={cn("text-[11px] font-medium px-1.5 py-0.5 rounded-full", statusColor(item.state))}>{item.state}</span>
-                          </div>
-                        </div>
+            )}
+
+            {/* Save button */}
+            {undispatchedItems.length > 0 && (
+              <button type="button" onClick={handleITApply} disabled={itChecked.size === 0}
+                className={cn(
+                  "w-full font-semibold rounded-xl py-3 text-sm flex items-center justify-center gap-2 transition-colors shadow-sm",
+                  itChecked.size > 0 ? "bg-indigo-600 hover:bg-indigo-700 text-white" : "bg-indigo-100 text-indigo-300 cursor-not-allowed"
+                )}>
+                <Save size={15} />
+                {itChecked.size > 0
+                  ? `Save IT Dispatch — ${itChecked.size} item${itChecked.size !== 1 ? "s" : ""} selected`
+                  : "Select items above to save dispatch"}
+              </button>
+            )}
+
+            {/* ── Already dispatched — read-only ── */}
+            {dispatchedItems.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Dispatched ({dispatchedItems.length})
+                </p>
+                {dispatchedItems.map((item) => (
+                  <div key={item.id} className="border border-indigo-100 bg-indigo-50/40 rounded-xl px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.ritm}</p>
                         <p className="text-[11px] text-slate-500 mt-1">Qty: {item.quantity} &bull; {deliveryLabel(item.deliveryMethod)}</p>
-                        {item.itAction && (
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
-                            <span className={cn(
-                              "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
-                              item.itAction.shipmentType === "ship_office" ? "bg-indigo-100 text-indigo-700" : "bg-violet-100 text-violet-700"
-                            )}>
-                              {item.itAction.shipmentType === "ship_office" ? <><Building2 size={10} /> Office</> : <><Store size={10} /> Vendor</>}
-                            </span>
-                            <span className="text-slate-400">{formatDate(item.itAction.initiatedDate)} &bull; <strong>{item.itAction.initiatedBy}</strong></span>
-                            <button type="button"
-                              onClick={(e) => { e.stopPropagation(); setEmailPayload(buildITDispatchEmail(request, [item], item.itAction!.shipmentType, item.itAction!.initiatedDate, item.itAction!.initiatedBy, item.itAction!.notes ?? "")); }}
-                              className="text-indigo-500 hover:text-indigo-700 underline flex items-center gap-0.5">
-                              <Mail size={10} /> Email
-                            </button>
-                          </div>
-                        )}
                       </div>
+                      <span className={cn("text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0", statusColor(item.state))}>
+                        SN: {item.state}
+                      </span>
                     </div>
-                  );
-                })}
+                    {item.itAction && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
+                          item.itAction.shipmentType === "ship_office" ? "bg-indigo-100 text-indigo-700" : "bg-violet-100 text-violet-700"
+                        )}>
+                          {item.itAction.shipmentType === "ship_office" ? <><Building2 size={10} /> Office</> : <><Store size={10} /> Vendor</>}
+                        </span>
+                        <span className="text-slate-500">
+                          {formatDate(item.itAction.initiatedDate)} &bull; <strong>{item.itAction.initiatedBy}</strong>
+                          {item.itAction.notes && <> &bull; {item.itAction.notes}</>}
+                        </span>
+                        <button type="button"
+                          onClick={() => setEmailPayload(buildITDispatchEmail(request, [item], item.itAction!.shipmentType, item.itAction!.initiatedDate, item.itAction!.initiatedBy, item.itAction!.notes ?? ""))}
+                          className="text-indigo-500 hover:text-indigo-700 underline flex items-center gap-0.5">
+                          <Mail size={10} /> Email
+                        </button>
+                        <button type="button" onClick={() => resetItem(item)}
+                          className="flex items-center gap-0.5 text-red-500 hover:text-red-700 border border-red-200 rounded px-1.5 py-0.5 bg-white">
+                          <RotateCcw size={9} /> Reset
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
+
+            {/* ── Closed Complete, no dispatch needed — info only ── */}
+            {closedNoDispatch.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-xs font-semibold text-green-700 uppercase tracking-wide flex items-center gap-1.5">
+                  <CheckCircle2 size={12} /> Closed in ServiceNow — no dispatch needed ({closedNoDispatch.length})
+                </p>
+                {closedNoDispatch.map((item) => (
+                  <div key={item.id} className="border border-green-200 bg-green-50/40 rounded-xl px-4 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">{item.ritm}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">Qty: {item.quantity} &bull; {deliveryLabel(item.deliveryMethod)}</p>
+                      </div>
+                      <span className="text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-green-100 text-green-700">
+                        SN: Closed Complete
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

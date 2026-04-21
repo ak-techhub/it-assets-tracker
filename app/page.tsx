@@ -5,7 +5,7 @@ const cards = [
   {
     href: "/upload",
     icon: Upload,
-    color: "bg-indigo-500",
+    iconBg: "#FF4A1C",
     title: "Import Requests",
     desc: "Upload an Excel file containing accessory requests. Review, manage, and organize all employee requests.",
     cta: "Go to Import",
@@ -13,7 +13,7 @@ const cards = [
   {
     href: "/lookup",
     icon: Search,
-    color: "bg-emerald-500",
+    iconBg: "#1B2A4A",
     title: "Collect Accessories",
     desc: "Employees search by name or ID to view their approved accessories and acknowledge collection or request shipment.",
     cta: "Go to Collection",
@@ -21,7 +21,7 @@ const cards = [
   {
     href: "/reports",
     icon: BarChart3,
-    color: "bg-violet-500",
+    iconBg: "#00B0B9",
     title: "Reports & Analytics",
     desc: "View fulfilment summaries, delivery breakdowns, pending items, and export full data to Excel.",
     cta: "View Reports",
@@ -30,26 +30,56 @@ const cards = [
 
 export default function Home() {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-16">
-      <div className="text-center mb-14">
-        <h1 className="text-4xl font-bold text-slate-800 mb-3">IT Assets Tracker</h1>
-        <p className="text-slate-500 text-lg max-w-xl mx-auto">
-          Streamline the tracking, collection, and reporting of employee accessory requests.
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-20">
+      {/* Hero */}
+      <div className="text-center mb-16">
+        <div
+          className="inline-block px-4 py-1.5 rounded-full text-xs font-semibold tracking-widest uppercase mb-6"
+          style={{ background: "rgba(255,74,28,0.12)", color: "#FF4A1C" }}
+        >
+          IT Accessories Management
+        </div>
+        <h1
+          className="text-5xl font-extrabold mb-4 leading-tight"
+          style={{ color: "#1B2A4A" }}
+        >
+          IT Assets Tracker
+        </h1>
+        <p className="text-lg max-w-xl mx-auto" style={{ color: "#4A5C7A" }}>
+          Streamline the tracking, collection, and reporting of employee
+          accessory requests — powered by Genesys.
         </p>
       </div>
+
+      {/* Cards */}
       <div className="grid sm:grid-cols-3 gap-6">
-        {cards.map(({ href, icon: Icon, color, title, desc, cta }) => (
+        {cards.map(({ href, icon: Icon, iconBg, title, desc, cta }) => (
           <Link
             key={href}
             href={href}
-            className="group bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow p-6 flex flex-col"
+            className="group rounded-2xl border shadow-sm hover:shadow-xl transition-all p-6 flex flex-col"
+            style={{
+              background: "rgba(255,255,255,0.82)",
+              backdropFilter: "blur(12px)",
+              borderColor: "rgba(27,42,74,0.1)",
+            }}
           >
-            <div className={`${color} text-white w-12 h-12 rounded-xl flex items-center justify-center mb-4`}>
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center mb-5 text-white"
+              style={{ background: iconBg }}
+            >
               <Icon size={22} />
             </div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">{title}</h2>
-            <p className="text-sm text-slate-500 flex-1 mb-4">{desc}</p>
-            <span className="flex items-center gap-1 text-sm font-medium text-indigo-600 group-hover:gap-2 transition-all">
+            <h2 className="text-lg font-bold mb-2" style={{ color: "#1B2A4A" }}>
+              {title}
+            </h2>
+            <p className="text-sm flex-1 mb-5 leading-relaxed" style={{ color: "#4A5C7A" }}>
+              {desc}
+            </p>
+            <span
+              className="flex items-center gap-1 text-sm font-semibold group-hover:gap-2.5 transition-all"
+              style={{ color: "#FF4A1C" }}
+            >
               {cta} <ArrowRight size={15} />
             </span>
           </Link>

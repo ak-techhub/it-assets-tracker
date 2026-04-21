@@ -10,6 +10,7 @@ import { formatDate, statusColor, employeeTypeColor, exportToExcel, cn } from "@
 
 export default function LookupPage() {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [formKey, setFormKey]       = useState(0);   // incremented to force form remount
   const [query, setQuery] = useState("");
   const [filterApproval, setFilterApproval] = useState("All");
   const [filterType, setFilterType] = useState("All");
@@ -37,11 +38,12 @@ export default function LookupPage() {
   }, [all, query, filterApproval, filterType]);
 
   const handleAcknowledged = useCallback(() => {
+    const freshAll = getRequests();
     setRefreshKey((k) => k + 1);
+    setFormKey((k) => k + 1);           // force AcknowledgmentForm to remount with fresh data
     setSelected((prev) => {
       if (!prev) return prev;
-      const fresh = getRequests().find((r) => r.id === prev.id);
-      return fresh ?? prev;
+      return freshAll.find((r) => r.id === prev.id) ?? prev;
     });
   }, []);
 
@@ -229,6 +231,7 @@ export default function LookupPage() {
               {/* Acknowledgment form with tabs */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
                 <AcknowledgmentForm
+                  key={`${selected.id}-${formKey}`}
                   request={selected}
                   assigneeOptions={assigneeOptions}
                   onAcknowledged={handleAcknowledged}

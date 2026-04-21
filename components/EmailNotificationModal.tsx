@@ -1,8 +1,9 @@
 "use client";
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Mail, Copy, ExternalLink, X, CheckCircle2, Search, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getContacts } from "@/lib/headcount";
+import type { EmployeeContact } from "@/lib/types";
 
 export interface EmailPayload {
   to: string;
@@ -17,7 +18,10 @@ interface Props {
 }
 
 export default function EmailNotificationModal({ payload, onClose }: Props) {
-  const contacts    = useMemo(() => getContacts(), []);
+  // Load contacts client-side only (localStorage is not available during SSR)
+  const [contacts, setContacts] = useState<EmployeeContact[]>([]);
+  useEffect(() => { setContacts(getContacts()); }, []);
+
   const autoFilled  = !!payload.to;
 
   const [to, setTo]           = useState(payload.to);
@@ -32,11 +36,14 @@ export default function EmailNotificationModal({ payload, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const dropRef  = useRef<HTMLUListElement>(null);
 
-  // Always focus input when modal opens; open dropdown if contacts exist
+  // Open dropdown and focus input once contacts are available
   useEffect(() => {
     if (contacts.length > 0) setShowDropdown(true);
+  }, [contacts]);
+
+  useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 100);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Filter contacts by what the user types
   const suggestions = useMemo(() => {

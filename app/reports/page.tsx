@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, CartesianGrid,
 } from "recharts";
-import { Download, RefreshCw, Package, CheckCircle2, Truck, Users, X } from "lucide-react";
+import { Download, RefreshCw, Package, CheckCircle2, Truck, Users, X, Send } from "lucide-react";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
 
@@ -49,6 +49,10 @@ function DrillPanel({
       "Collection Method":item.collectionMethod === "collect" ? "Collected from Office" : item.collectionMethod === "ship" ? "Shipment Requested" : "",
       "Collected Date":   item.collectedDate ?? "",
       "Acknowledged By":  item.acknowledgedBy ?? "",
+      "IT Dispatch Type": item.itAction ? (item.itAction.shipmentType === "ship_office" ? "From Office" : "Via Vendor") : "",
+      "IT Initiated Date":item.itAction?.initiatedDate ?? "",
+      "IT Initiated By":  item.itAction?.initiatedBy ?? "",
+      "IT Notes":         item.itAction?.notes ?? "",
       "Notes":            item.notes ?? "",
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -200,6 +204,7 @@ export default function ReportsPage() {
     { label: "New Hires",       value: newHireCount,               icon: Users,        color: "bg-purple-50 text-purple-600",  filter: () => allItems.filter((i) => i.employeeType === "New Hire") },
     { label: "Items Collected", value: summary.collected,          icon: CheckCircle2, color: "bg-emerald-50 text-emerald-600",filter: () => allItems.filter((i) => i.status === "collected") },
     { label: "Items Pending",   value: summary.pendingFulfillment, icon: Truck,        color: "bg-orange-50 text-orange-600",  filter: () => allItems.filter((i) => i.status === "pending") },
+    { label: "IT Dispatched",   value: summary.totalDispatched,    icon: Send,         color: "bg-violet-50 text-violet-600",  filter: () => allItems.filter((i) => !!i.itAction) },
   ];
 
   // ── Handlers ────────────────────────────────────────────────────────────
@@ -241,6 +246,32 @@ export default function ReportsPage() {
     );
   };
 
+  // IT Dispatch chart data
+  const dispatchData = [
+    { name: "From Office", value: summary.dispatchedOffice },
+    { name: "Via Vendor",  value: summary.dispatchedVendor },
+  ].filter((d) => d.value > 0);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const onDispatchClick = (data: any) => {
+    const name = String(data?.name ?? "");
+    const type = name === "From Office" ? "ship_office" : "ship_vendor";
+    openDrill(`IT Dispatch: ${name}`, allItems.filter((i) => i.itAction?.shipmentType === type));
+  };
+
+  // IT Dispatch by assignee data
+  const dispatchByAssigneeMap = new Map<string, { name: string; office: number; vendor: number }>();
+  for (const item of allItems) {
+    if (!item.itAction) continue;
+    const key = item.itAction.initiatedBy || "Unknown";
+    if (!dispatchByAssigneeMap.has(key)) dispatchByAssigneeMap.set(key, { name: key, office: 0, vendor: 0 });
+    const e = dispatchByAssigneeMap.get(key)!;
+    if (item.itAction.shipmentType === "ship_office") e.office++;
+    else e.vendor++;
+  }
+  const dispatchByAssignee = Array.from(dispatchByAssigneeMap.values())
+    .sort((a, b) => (b.office + b.vendor) - (a.office + a.vendor));
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
       {/* Header */}
@@ -263,7 +294,7 @@ export default function ReportsPage() {
       </div>
 
       {/* Stat cards — clickable */}
-      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {statCards.map(({ label, value, icon: Icon, color, filter }) => (
           <button
             key={label}
@@ -419,6 +450,49 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+
+      {/* IT Dispatch charts */}
+      {summary.totalDispatched > 0 && (
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <h3 className="text-sm font-semibold text-slate-700 mb-1">IT Dispatch — Office vs Vendor</h3>
+            <p className="text-xs text-slate-400 mb-3">Click a slice to see dispatched items</p>
+            <ResponsiveContainer width="100%" height={190}>
+              <PieChart style={{ cursor: "pointer" }}>
+                <Pie
+                  data={dispatchData} cx="50%" cy="50%" innerRadius={48} outerRadius={72}
+                  dataKey="value" paddingAngle={3}
+                  onClick={onDispatchClick}
+                >
+                  {dispatchData.map((_, i) => <Cell key={i} fill={["#6366f1","#8b5cf6"][i % 2]} />)}
+                </Pie>
+                <Legend iconSize={10} iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {dispatchByAssignee.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+              <h3 className="text-sm font-semibold text-slate-700 mb-1">IT Dispatch by Assignee</h3>
+              <p className="text-xs text-slate-400 mb-3">Click a bar to see items dispatched by that person</p>
+              <ResponsiveContainer width="100%" height={190}>
+                <BarChart data={dispatchByAssignee} barSize={20} style={{ cursor: "pointer" }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip />
+                  <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="office" name="From Office" stackId="a" fill="#6366f1" radius={[0,0,0,0]}
+                    onClick={(d) => openDrill(`IT Dispatch Office — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction.shipmentType === "ship_office"))} />
+                  <Bar dataKey="vendor" name="Via Vendor"  stackId="a" fill="#8b5cf6" radius={[4,4,0,0]}
+                    onClick={(d) => openDrill(`IT Dispatch Vendor — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction.shipmentType === "ship_vendor"))} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Drill-down result panel */}
       {drill && (

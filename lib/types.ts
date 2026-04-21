@@ -71,4 +71,8 @@ export interface ReportSummary {
   pendingFulfillment: number;
   closedComplete: number;
   workInProgress: number;
+  // IT dispatch
+  dispatchedOffice: number;
+  dispatchedVendor: number;
+  totalDispatched: number;
 }

@@ -53,6 +53,45 @@ function buildHwQuarterData(assets: HardwareAsset[], fy: string) {
   return data;
 }
 
+// Warranty expiry quarter data — keyed by warrantyExpiry date
+interface WarrantyQtrRow {
+  label: string; q: number;
+  primaryMac: number; primaryWindows: number;
+  secondaryMac: number; secondaryWindows: number;
+}
+
+function buildWarrantyQtrData(assets: HardwareAsset[], fy: string): WarrantyQtrRow[] {
+  const data: WarrantyQtrRow[] = Q_LABELS.map((label, i) => ({
+    label, q: i + 1,
+    primaryMac: 0, primaryWindows: 0,
+    secondaryMac: 0, secondaryWindows: 0,
+  }));
+  for (const a of assets) {
+    if (!a.warrantyExpiry) continue;
+    const info = getFiscalInfo(a.warrantyExpiry); // use warranty date, not assigned date
+    if (!info || info.fy !== fy) continue;
+    const row = data[info.q - 1];
+    const os = getOsType(a.laptopModel);
+    if (a.substatus === "Primary") {
+      if (os === "Mac") row.primaryMac++; else row.primaryWindows++;
+    } else {
+      if (os === "Mac") row.secondaryMac++; else row.secondaryWindows++;
+    }
+  }
+  return data;
+}
+
+function getAvailableWarrantyFYs(assets: HardwareAsset[]): string[] {
+  const set = new Set<string>();
+  for (const a of assets) {
+    const info = getFiscalInfo(a.warrantyExpiry);
+    if (info) set.add(info.fy);
+  }
+  const sorted = Array.from(set).sort().reverse();
+  if (!sorted.includes("FY 2026-27")) sorted.unshift("FY 2026-27");
+  return sorted;
+}
+
 function getAvailableFYs(assets: HardwareAsset[]): string[] {
   const set = new Set<string>();
   for (const a of assets) {
@@ -388,6 +427,53 @@ export default function ReportsPage() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Hardware Report");
     XLSX.writeFile(wb, `hardware-report-${selectedFY.replace(/\s/g, "-")}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  // ── Warranty expiry report ───────────────────────────────────────────────
+  const warrantyFYs = useMemo(() => getAvailableWarrantyFYs(hwAssets), [hwAssets]);
+  const [warrantyFY, setWarrantyFY] = useState("FY 2026-27");
+
+  const warrantyQtrData = useMemo(
+    () => buildWarrantyQtrData(hwAssets, warrantyFY),
+    [hwAssets, warrantyFY]
+  );
+
+  const warrantyFYAssets = useMemo(
+    () => hwAssets.filter((a) => a.warrantyExpiry && getFiscalInfo(a.warrantyExpiry)?.fy === warrantyFY),
+    [hwAssets, warrantyFY]
+  );
+
+  const warrantyTotals = useMemo(() => ({
+    primaryMac:       warrantyFYAssets.filter((a) => a.substatus === "Primary"   && getOsType(a.laptopModel) === "Mac").length,
+    primaryWindows:   warrantyFYAssets.filter((a) => a.substatus === "Primary"   && getOsType(a.laptopModel) === "Windows").length,
+    secondaryMac:     warrantyFYAssets.filter((a) => a.substatus === "Secondary" && getOsType(a.laptopModel) === "Mac").length,
+    secondaryWindows: warrantyFYAssets.filter((a) => a.substatus === "Secondary" && getOsType(a.laptopModel) === "Windows").length,
+  }), [warrantyFYAssets]);
+
+  const exportWarrantyReport = () => {
+    const rows = warrantyFYAssets.map((a) => {
+      const wInfo = getFiscalInfo(a.warrantyExpiry);
+      const daysLeft = Math.ceil((new Date(a.warrantyExpiry).getTime() - Date.now()) / 86_400_000);
+      return {
+        "User Name":      a.userName,
+        "Email":          a.email,
+        "Laptop Model":   a.laptopModel,
+        "OS Type":        getOsType(a.laptopModel),
+        "Serial No":      a.serialNo,
+        "Warranty Expiry":a.warrantyExpiry,
+        "Warranty FY":    wInfo?.fy ?? "",
+        "Warranty Qtr":   wInfo ? Q_LABELS[wInfo.q - 1] : "",
+        "Substatus":      a.substatus,
+        "Location":       a.location,
+        "Assigned Date":  a.assignedDate,
+        "Current Status": a.status,
+        "Days to Expiry": daysLeft < 0 ? `Expired ${Math.abs(daysLeft)}d ago` : `${daysLeft}d remaining`,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Warranty Report");
+    XLSX.writeFile(wb, `warranty-report-${warrantyFY.replace(/\s/g, "-")}-${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 
   return (
@@ -976,6 +1062,237 @@ export default function ReportsPage() {
                 </table>
               </div>
             </div>
+          </>
+        )}
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          WARRANTY EXPIRY REPORT
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="space-y-6">
+        {/* Section header */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl text-white" style={{ background: "#d97706" }}>
+              <Laptop size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold" style={{ color: "#1B2A4A" }}>Warranty Expiry Report</h2>
+              <p className="text-slate-500 text-xs mt-0.5">Quarter-wise breakdown by Primary/Secondary · Mac/Windows · based on warranty expiry date</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* FY selector */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-1 py-1">
+              {warrantyFYs.map((fy) => (
+                <button key={fy} onClick={() => setWarrantyFY(fy)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={warrantyFY === fy ? { background: "#d97706", color: "#fff" } : { color: "#64748b" }}>
+                  {fy}
+                </button>
+              ))}
+            </div>
+            <button onClick={exportWarrantyReport} disabled={warrantyFYAssets.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40"
+              style={{ background: "#d97706" }}>
+              <Download size={14} /> Export {warrantyFY}
+            </button>
+          </div>
+        </div>
+
+        {hwAssets.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-10 text-center">
+            <p className="text-slate-400 text-sm">Import hardware assets to see warranty expiry data.</p>
+          </div>
+        ) : (
+          <>
+            {/* Summary stat cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { label: "Primary — Mac",       value: warrantyTotals.primaryMac,       bg: "#FFF2EE", color: "#FF4A1C",  border: "#FFD0C0" },
+                { label: "Primary — Windows",   value: warrantyTotals.primaryWindows,   bg: "#EEF1F6", color: "#1B2A4A",  border: "#C5CDD9" },
+                { label: "Secondary — Mac",     value: warrantyTotals.secondaryMac,     bg: "#FFF7ED", color: "#EA580C",  border: "#FDD5A0" },
+                { label: "Secondary — Windows", value: warrantyTotals.secondaryWindows, bg: "#F1F5F9", color: "#8BA3B8",  border: "#CBD5E1" },
+              ].map(({ label, value, bg, color, border }) => (
+                <div key={label} className="rounded-2xl border px-5 py-4 text-center shadow-sm"
+                  style={{ background: bg, borderColor: border }}>
+                  <p className="text-3xl font-extrabold" style={{ color }}>{value}</p>
+                  <p className="text-xs font-semibold mt-1" style={{ color, opacity: 0.8 }}>{label}</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">expiring in {warrantyFY}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Charts row */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* Grouped bar — Primary Mac vs Windows by quarter */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary — Mac vs Windows Warranty Expiry by Quarter</h3>
+                <p className="text-xs text-slate-400 mb-4">{warrantyFY} · based on warranty expiry date</p>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={warrantyQtrData} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="primaryMac"     name="Primary Mac"     fill="#FF4A1C" radius={[4,4,0,0]} />
+                    <Bar dataKey="primaryWindows" name="Primary Windows" fill="#1B2A4A" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Grouped bar — Secondary Mac vs Windows by quarter */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Secondary — Mac vs Windows Warranty Expiry by Quarter</h3>
+                <p className="text-xs text-slate-400 mb-4">{warrantyFY} · based on warranty expiry date</p>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={warrantyQtrData} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="secondaryMac"     name="Secondary Mac"     fill="#EA580C" radius={[4,4,0,0]} />
+                    <Bar dataKey="secondaryWindows" name="Secondary Windows" fill="#8BA3B8" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Full breakdown table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100" style={{ background: "#1B2A4A" }}>
+                <h3 className="text-sm font-semibold text-white">Warranty Expiry Quarter-wise Summary — {warrantyFY}</h3>
+                <p className="text-xs mt-0.5" style={{ color: "#8BA3B8" }}>Q1 = Feb–Apr · Q2 = May–Jul · Q3 = Aug–Oct · Q4 = Nov–Jan · based on warranty expiry date</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <th className="px-5 py-3 text-left font-semibold" rowSpan={2}>Quarter</th>
+                      <th className="px-3 py-2 text-center font-semibold border-b border-slate-100" colSpan={3} style={{ color: "#FF4A1C" }}>Primary</th>
+                      <th className="px-3 py-2 text-center font-semibold border-b border-slate-100" colSpan={3} style={{ color: "#8BA3B8" }}>Secondary</th>
+                      <th className="px-3 py-2 text-center font-semibold" rowSpan={2} style={{ color: "#1B2A4A" }}>Grand Total</th>
+                    </tr>
+                    <tr className="bg-slate-50 text-xs text-slate-500">
+                      <th className="px-4 py-2 text-center font-semibold" style={{ color: "#FF4A1C" }}>Mac</th>
+                      <th className="px-4 py-2 text-center font-semibold" style={{ color: "#1B2A4A" }}>Windows</th>
+                      <th className="px-4 py-2 text-center font-semibold text-slate-500">Sub Total</th>
+                      <th className="px-4 py-2 text-center font-semibold" style={{ color: "#EA580C" }}>Mac</th>
+                      <th className="px-4 py-2 text-center font-semibold" style={{ color: "#8BA3B8" }}>Windows</th>
+                      <th className="px-4 py-2 text-center font-semibold text-slate-500">Sub Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {warrantyQtrData.map((row) => {
+                      const primTotal = row.primaryMac + row.primaryWindows;
+                      const secTotal  = row.secondaryMac + row.secondaryWindows;
+                      return (
+                        <tr key={row.label} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="px-5 py-3 font-semibold text-slate-700">{row.label}</td>
+                          <td className="px-4 py-3 text-center font-bold" style={{ color: "#FF4A1C" }}>{row.primaryMac}</td>
+                          <td className="px-4 py-3 text-center font-bold" style={{ color: "#1B2A4A" }}>{row.primaryWindows}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-slate-600 bg-orange-50/40">{primTotal}</td>
+                          <td className="px-4 py-3 text-center font-bold" style={{ color: "#EA580C" }}>{row.secondaryMac}</td>
+                          <td className="px-4 py-3 text-center font-bold" style={{ color: "#8BA3B8" }}>{row.secondaryWindows}</td>
+                          <td className="px-4 py-3 text-center font-semibold text-slate-600 bg-slate-50/60">{secTotal}</td>
+                          <td className="px-4 py-3 text-center font-bold" style={{ color: "#1B2A4A" }}>{primTotal + secTotal}</td>
+                        </tr>
+                      );
+                    })}
+                    {/* FY Total row */}
+                    <tr className="font-bold text-sm border-t-2 border-slate-200" style={{ background: "#F5F1EB" }}>
+                      <td className="px-5 py-3" style={{ color: "#1B2A4A" }}>FY Total</td>
+                      <td className="px-4 py-3 text-center" style={{ color: "#FF4A1C" }}>{warrantyTotals.primaryMac}</td>
+                      <td className="px-4 py-3 text-center" style={{ color: "#1B2A4A" }}>{warrantyTotals.primaryWindows}</td>
+                      <td className="px-4 py-3 text-center text-slate-700 bg-orange-50/40">{warrantyTotals.primaryMac + warrantyTotals.primaryWindows}</td>
+                      <td className="px-4 py-3 text-center" style={{ color: "#EA580C" }}>{warrantyTotals.secondaryMac}</td>
+                      <td className="px-4 py-3 text-center" style={{ color: "#8BA3B8" }}>{warrantyTotals.secondaryWindows}</td>
+                      <td className="px-4 py-3 text-center text-slate-700 bg-slate-50/60">{warrantyTotals.secondaryMac + warrantyTotals.secondaryWindows}</td>
+                      <td className="px-4 py-3 text-center" style={{ color: "#1B2A4A" }}>
+                        {warrantyTotals.primaryMac + warrantyTotals.primaryWindows + warrantyTotals.secondaryMac + warrantyTotals.secondaryWindows}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Device list */}
+            {warrantyFYAssets.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    All devices with warranty expiring in {warrantyFY}
+                    <span className="ml-2 text-slate-400 font-normal">({warrantyFYAssets.length})</span>
+                  </h3>
+                </div>
+                <div className="overflow-x-auto max-h-80 scrollbar-thin">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-500 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-medium">User</th>
+                        <th className="px-4 py-2 text-left font-medium">Model</th>
+                        <th className="px-4 py-2 text-left font-medium">Serial No</th>
+                        <th className="px-4 py-2 text-left font-medium">OS</th>
+                        <th className="px-4 py-2 text-left font-medium">Substatus</th>
+                        <th className="px-4 py-2 text-left font-medium">Location</th>
+                        <th className="px-4 py-2 text-left font-medium">Warranty Expiry</th>
+                        <th className="px-4 py-2 text-left font-medium">Qtr</th>
+                        <th className="px-4 py-2 text-left font-medium">Days</th>
+                        <th className="px-4 py-2 text-left font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {warrantyFYAssets
+                        .slice()
+                        .sort((a, b) => a.warrantyExpiry.localeCompare(b.warrantyExpiry))
+                        .map((a) => {
+                          const daysLeft = Math.ceil((new Date(a.warrantyExpiry).getTime() - Date.now()) / 86_400_000);
+                          const wInfo    = getFiscalInfo(a.warrantyExpiry);
+                          return (
+                            <tr key={a.id} className="hover:bg-amber-50/20">
+                              <td className="px-4 py-2 font-medium text-slate-700">{a.userName}</td>
+                              <td className="px-4 py-2 text-slate-600">{a.laptopModel || "—"}</td>
+                              <td className="px-4 py-2 font-mono text-slate-500">{a.serialNo}</td>
+                              <td className="px-4 py-2">
+                                <span className={cn("font-semibold px-2 py-0.5 rounded-full text-[11px]",
+                                  getOsType(a.laptopModel) === "Mac" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600")}>
+                                  {getOsType(a.laptopModel)}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={cn("font-semibold px-2 py-0.5 rounded-full text-[11px]",
+                                  a.substatus === "Primary" ? "bg-orange-50 text-orange-700" : "bg-slate-100 text-slate-600")}>
+                                  {a.substatus}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2 text-slate-500">{a.location || "—"}</td>
+                              <td className="px-4 py-2 font-medium text-slate-700">{a.warrantyExpiry}</td>
+                              <td className="px-4 py-2 text-slate-500">{wInfo ? Q_LABELS[wInfo.q - 1].split(" ")[0] : "—"}</td>
+                              <td className="px-4 py-2">
+                                <span className={cn("font-semibold text-[11px] px-2 py-0.5 rounded-full",
+                                  daysLeft < 0 ? "bg-red-50 text-red-600" :
+                                  daysLeft <= 30 ? "bg-orange-50 text-orange-600" :
+                                  "bg-yellow-50 text-yellow-700")}>
+                                  {daysLeft < 0 ? `${Math.abs(daysLeft)}d expired` : `${daysLeft}d left`}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={cn("text-[11px] font-semibold px-2 py-0.5 rounded-full",
+                                  a.status === "Active" ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-500")}>
+                                  {a.status}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

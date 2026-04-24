@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# uploaded data files — Excel / CSV uploads should never be committed
+*.xlsx
+*.xls
+*.csv
+/uploads/
+/data/

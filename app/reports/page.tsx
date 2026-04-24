@@ -39,13 +39,15 @@ function getOsType(model: string): "Mac" | "Windows" {
   return "Windows";
 }
 
-function buildHwQuarterData(assets: HardwareAsset[], fy: string) {
+function buildHwQuarterData(assets: HardwareAsset[]) {
+  // Group ALL assets by their fiscal quarter regardless of year
+  // so the chart always shows populated Q1–Q4 data
   const data = Q_LABELS.map((label, i) => ({
     label, q: i + 1, Mac: 0, Windows: 0, Primary: 0, Secondary: 0,
   }));
   for (const a of assets) {
     const info = getFiscalInfo(a.assignedDate);
-    if (!info || info.fy !== fy) continue;
+    if (!info) continue;
     const row = data[info.q - 1];
     row[getOsType(a.laptopModel)]++;
     row[a.substatus]++;
@@ -370,7 +372,7 @@ export default function ReportsPage() {
   const availableFYs = useMemo(() => getAvailableFYs(hwAssets), [hwAssets]);
   const [selectedFY, setSelectedFY] = useState("FY 2026-27");
 
-  const hwQtrData = useMemo(() => buildHwQuarterData(hwAssets, selectedFY), [hwAssets, selectedFY]);
+  const hwQtrData = useMemo(() => buildHwQuarterData(hwAssets), [hwAssets]);
 
   const hwFYAssets = useMemo(
     () => hwAssets.filter((a) => getFiscalInfo(a.assignedDate)?.fy === selectedFY),
@@ -916,7 +918,7 @@ export default function ReportsPage() {
             <div className="grid lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
                 <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Mac vs Windows — by Quarter</h3>
-                <p className="text-xs text-slate-400 mb-4">{selectedFY} · based on Assigned Date</p>
+                <p className="text-xs text-slate-400 mb-4">All assets · grouped by assigned quarter</p>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={hwQtrData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -933,7 +935,7 @@ export default function ReportsPage() {
               {/* Primary vs Secondary by Quarter */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
                 <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary vs Secondary — by Quarter</h3>
-                <p className="text-xs text-slate-400 mb-4">{selectedFY} · based on Assigned Date</p>
+                <p className="text-xs text-slate-400 mb-4">All assets · grouped by assigned quarter</p>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={hwQtrData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -948,71 +950,69 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {/* Chart row 2 — Donut breakdowns */}
-            <div className="grid lg:grid-cols-3 gap-6">
-              {/* OS donut */}
+            {/* Chart row 2 — Donut breakdowns (2 donuts, totals in center) */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* OS donut — total in center */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
-                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>OS Type Split</h3>
-                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Mac vs Windows</h3>
+                <p className="text-xs text-slate-400 mb-2">{selectedFY} · total devices</p>
                 <div className="flex-1 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie data={hwOsDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                        innerRadius={55} outerRadius={80} paddingAngle={3}
-                        label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                        labelLine={false}>
-                        {hwOsDonut.map((d) => (
-                          <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="relative w-full" style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie data={hwOsDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                          innerRadius={60} outerRadius={88} paddingAngle={3} labelLine={false}>
+                          {hwOsDonut.map((d) => (
+                            <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                          formatter={(v, n) => [`${v} devices`, n]} />
+                        <Legend iconSize={12} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Center total */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 28 }}>
+                      <div className="text-center">
+                        <p className="text-3xl font-extrabold" style={{ color: "#1B2A4A" }}>
+                          {hwOsDonut.reduce((s, d) => s + d.value, 0)}
+                        </p>
+                        <p className="text-[11px] text-slate-400 font-medium">Total</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Substatus donut */}
+              {/* Substatus donut — total in center */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
                 <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary vs Secondary</h3>
-                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
+                <p className="text-xs text-slate-400 mb-2">{selectedFY} · total devices</p>
                 <div className="flex-1 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie data={hwSubDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                        innerRadius={55} outerRadius={80} paddingAngle={3}
-                        label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                        labelLine={false}>
-                        {hwSubDonut.map((d) => (
-                          <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Status donut */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
-                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Asset Status Mix</h3>
-                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
-                <div className="flex-1 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <PieChart>
-                      <Pie data={hwStatusDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                        innerRadius={55} outerRadius={80} paddingAngle={3}
-                        label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
-                        labelLine={false}>
-                        {hwStatusDonut.map((d, i) => (
-                          <Cell key={d.name} fill={COLORS[i % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
-                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="relative w-full" style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie data={hwSubDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                          innerRadius={60} outerRadius={88} paddingAngle={3} labelLine={false}>
+                          {hwSubDonut.map((d) => (
+                            <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
+                          ))}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }}
+                          formatter={(v, n) => [`${v} devices`, n]} />
+                        <Legend iconSize={12} wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Center total */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ paddingBottom: 28 }}>
+                      <div className="text-center">
+                        <p className="text-3xl font-extrabold" style={{ color: "#1B2A4A" }}>
+                          {hwSubDonut.reduce((s, d) => s + d.value, 0)}
+                        </p>
+                        <p className="text-[11px] text-slate-400 font-medium">Total</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

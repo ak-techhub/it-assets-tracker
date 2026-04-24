@@ -493,11 +493,27 @@ export default function HardwarePage() {
         {/* ── Excel column guide ── */}
         <details className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-500 cursor-pointer">
           <summary className="font-medium text-slate-600 select-none">Expected Excel columns for import</summary>
-          <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1 mt-3">
-            {["User Name","Email / Mail ID","Laptop Model","Serial No","Warranty Expiry Date","Substatus (Primary/Secondary)","Location","Assigned Date"].map((c) => (
-              <span key={c} className="bg-white border border-slate-200 rounded px-2 py-1">{c}</span>
+          <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {[
+              { col: "assigned_to",         desc: "User name" },
+              { col: "assigned_to.email",   desc: "Email address" },
+              { col: "display_name",        desc: "Device / laptop model" },
+              { col: "model_category",      desc: "Model category" },
+              { col: "serial_number",       desc: "Serial number (key)" },
+              { col: "warranty_expiration", desc: "Warranty expiry date" },
+              { col: "substatus",           desc: "Primary / Secondary" },
+              { col: "location",            desc: "Office location" },
+              { col: "assigned",            desc: "Date assigned" },
+              { col: "install_status",      desc: "Device status" },
+              { col: "disposed_scrap",      desc: "Disposed / scrap date" },
+            ].map(({ col, desc }) => (
+              <div key={col} className="bg-white border border-slate-200 rounded-lg px-3 py-1.5">
+                <p className="font-mono text-xs font-semibold text-slate-700">{col}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{desc}</p>
+              </div>
             ))}
           </div>
+          <p className="mt-3 text-[11px] text-slate-400">Common aliases also accepted (e.g. "Serial No", "Email", "Warranty Expiry").</p>
         </details>
 
       </>)}

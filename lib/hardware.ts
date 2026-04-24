@@ -119,14 +119,31 @@ export function parseAndMergeHardware(buffer: ArrayBuffer): HardwareImportResult
   let added = 0, updated = 0, skipped = 0;
 
   for (const row of rows) {
-    const nameCol    = findCol(row, 'user name', 'username', 'name', 'employee name', 'assigned to');
-    const emailCol   = findCol(row, 'email', 'mail id', 'mailid', 'email address', 'mail');
-    const modelCol   = findCol(row, 'laptop model', 'model', 'device model', 'asset model');
-    const serialCol  = findCol(row, 'serial no', 'serial number', 'serialno', 'serialnumber', 'asset tag', 'serial');
-    const warrantyCol= findCol(row, 'warranty expiry', 'warranty expiry date', 'warranty date', 'expiry date', 'warranty');
-    const substatusCol=findCol(row, 'substatus', 'sub status', 'asset type', 'type');
-    const locationCol= findCol(row, 'location', 'office location', 'site');
-    const assignedCol= findCol(row, 'assigned', 'assigned date', 'assignment date', 'date of assigning', 'date assigned');
+    // Exact ServiceNow column names take first priority, then common aliases
+    const nameCol     = findCol(row,
+      'assigned_to', 'assigned to',
+      'user name', 'username', 'name', 'employee name', 'display name');
+    const emailCol    = findCol(row,
+      'assigned_to.email', 'assignedtoemail',
+      'email', 'mail id', 'mailid', 'email address', 'mail');
+    const modelCol    = findCol(row,
+      'display_name', 'model_category', 'modelcategory',
+      'laptop model', 'model', 'device model', 'asset model');
+    const serialCol   = findCol(row,
+      'serial_number', 'serialnumber',
+      'serial no', 'serial', 'asset tag', 'serialno');
+    const warrantyCol = findCol(row,
+      'warranty_expiration', 'warrantyexpiration',
+      'warranty expiry', 'warranty expiry date', 'warranty date', 'expiry date', 'warranty');
+    const substatusCol= findCol(row,
+      'substatus', 'sub_status', 'sub status', 'asset type', 'type');
+    const locationCol = findCol(row,
+      'location', 'office location', 'site');
+    const assignedCol = findCol(row,
+      'assigned', 'assigned_date', 'assigned date', 'assignment date',
+      'date of assigning', 'date assigned');
+    const installCol  = findCol(row,
+      'install_status', 'installstatus', 'install status', 'status');
 
     if (!nameCol || !serialCol) { skipped++; continue; }
 
@@ -134,20 +151,30 @@ export function parseAndMergeHardware(buffer: ArrayBuffer): HardwareImportResult
     const serialNo     = str(row[serialCol]);
     if (!userName || !serialNo) { skipped++; continue; }
 
-    const email        = emailCol  ? str(row[emailCol])          : '';
-    const laptopModel  = modelCol  ? str(row[modelCol])          : '';
-    const warrantyExpiry = warrantyCol ? parseDate(row[warrantyCol]) : '';
-    const location     = locationCol ? str(row[locationCol])     : '';
-    const assignedDate = assignedCol ? parseDate(row[assignedCol]) : '';
+    const email          = emailCol    ? str(row[emailCol])           : '';
+    // Prefer model_category for model; fall back to display_name if it looks like a model
+    const displayName    = modelCol    ? str(row[modelCol])           : '';
+    const laptopModel    = displayName;
+    const warrantyExpiry = warrantyCol ? parseDate(row[warrantyCol])  : '';
+    const location       = locationCol ? str(row[locationCol])        : '';
+    const assignedDate   = assignedCol ? parseDate(row[assignedCol])  : '';
 
     const rawSub = substatusCol ? str(row[substatusCol]).toLowerCase() : '';
     const substatus: HardwareSubstatus =
       rawSub.includes('secondary') ? 'Secondary' : 'Primary';
 
+    // Map install_status to HardwareStatus
+    const rawInstall = installCol ? str(row[installCol]).toLowerCase() : '';
+    let importedStatus: import('./types').HardwareStatus = 'Active';
+    if (rawInstall.includes('retired') || rawInstall.includes('decommission')) importedStatus = 'Decommissioned';
+    else if (rawInstall.includes('stock') || rawInstall.includes('b stock'))   importedStatus = 'B Stock';
+    else if (rawInstall.includes('hold'))                                       importedStatus = 'Legal Hold';
+    else if (rawInstall.includes('refresh'))                                    importedStatus = 'Refresh Pending';
+
     const key = serialNo.toLowerCase();
     if (bySerial.has(key)) {
       const asset = bySerial.get(key)!;
-      // Refresh importable fields but keep status/workflow data
+      // Refresh importable fields but keep manual workflow status unless Excel says decommissioned
       asset.userName     = userName;
       asset.email        = email || asset.email;
       asset.laptopModel  = laptopModel || asset.laptopModel;
@@ -155,6 +182,8 @@ export function parseAndMergeHardware(buffer: ArrayBuffer): HardwareImportResult
       asset.substatus    = substatus;
       asset.location     = location || asset.location;
       asset.assignedDate = assignedDate || asset.assignedDate;
+      // Only override status if Excel explicitly marks it as decommissioned/retired
+      if (importedStatus === 'Decommissioned') asset.status = 'Decommissioned';
       asset.lastUpdated  = new Date().toISOString();
       updated++;
     } else {
@@ -162,7 +191,7 @@ export function parseAndMergeHardware(buffer: ArrayBuffer): HardwareImportResult
         id: `hw_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         userName, email, laptopModel, serialNo,
         warrantyExpiry, substatus, location, assignedDate,
-        status: 'Active',
+        status: importedStatus,
         importedAt:  new Date().toISOString(),
         lastUpdated: new Date().toISOString(),
       };

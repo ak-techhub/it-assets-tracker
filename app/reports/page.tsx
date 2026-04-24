@@ -1,16 +1,68 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { getRequests, getReportSummary } from "@/lib/store";
-import { AccessoryRequest, AccessoryItem } from "@/lib/types";
+import { getHardwareAssets } from "@/lib/hardware";
+import { AccessoryRequest, AccessoryItem, HardwareAsset } from "@/lib/types";
 import { exportToExcel, formatDate, deliveryLabel, statusColor, employeeTypeColor, cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, CartesianGrid,
 } from "recharts";
-import { Download, RefreshCw, Package, CheckCircle2, Truck, Users, X, Send } from "lucide-react";
+import { Download, RefreshCw, Package, CheckCircle2, Truck, Users, X, Send, Laptop } from "lucide-react";
 
 const COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"];
+const HW_COLORS = { Mac: "#FF4A1C", Windows: "#1B2A4A", Primary: "#FF4A1C", Secondary: "#8BA3B8" };
+
+// ── Fiscal-year helpers ───────────────────────────────────────────────────────
+// FY runs Feb → Jan  |  Q1=Feb-Apr  Q2=May-Jul  Q3=Aug-Oct  Q4=Nov-Jan
+const Q_LABELS = ["Q1 (Feb-Apr)", "Q2 (May-Jul)", "Q3 (Aug-Oct)", "Q4 (Nov-Jan)"];
+
+function getFiscalInfo(dateStr: string): { fy: string; q: number } | null {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const mo = d.getMonth() + 1;
+  const yr = d.getFullYear();
+  let q: number; let fyStart: number;
+  if      (mo >= 2 && mo <= 4)  { q = 1; fyStart = yr; }
+  else if (mo >= 5 && mo <= 7)  { q = 2; fyStart = yr; }
+  else if (mo >= 8 && mo <= 10) { q = 3; fyStart = yr; }
+  else if (mo >= 11)            { q = 4; fyStart = yr; }
+  else                          { q = 4; fyStart = yr - 1; } // Jan → prev FY Q4
+  return { fy: `FY ${fyStart}-${String(fyStart + 1).slice(2)}`, q };
+}
+
+function getOsType(model: string): "Mac" | "Windows" {
+  const m = (model ?? "").toLowerCase();
+  if (m.includes("mac") || m.includes("apple") || m.includes("macbook")) return "Mac";
+  return "Windows";
+}
+
+function buildHwQuarterData(assets: HardwareAsset[], fy: string) {
+  const data = Q_LABELS.map((label, i) => ({
+    label, q: i + 1, Mac: 0, Windows: 0, Primary: 0, Secondary: 0,
+  }));
+  for (const a of assets) {
+    const info = getFiscalInfo(a.assignedDate);
+    if (!info || info.fy !== fy) continue;
+    const row = data[info.q - 1];
+    row[getOsType(a.laptopModel)]++;
+    row[a.substatus]++;
+  }
+  return data;
+}
+
+function getAvailableFYs(assets: HardwareAsset[]): string[] {
+  const set = new Set<string>();
+  for (const a of assets) {
+    const info = getFiscalInfo(a.assignedDate);
+    if (info) set.add(info.fy);
+  }
+  const sorted = Array.from(set).sort().reverse();
+  if (!sorted.includes("FY 2026-27")) sorted.unshift("FY 2026-27");
+  return sorted;
+}
 
 // ── Drill-down result panel ──────────────────────────────────────────────────
 type DrillItem = AccessoryItem & { employeeName: string; employeeType: string; approvalState: string };
@@ -271,6 +323,72 @@ export default function ReportsPage() {
   }
   const dispatchByAssignee = Array.from(dispatchByAssigneeMap.values())
     .sort((a, b) => (b.office + b.vendor) - (a.office + a.vendor));
+
+  // ── Hardware data ────────────────────────────────────────────────────────
+  const [hwAssets, setHwAssets] = useState<HardwareAsset[]>([]);
+  useEffect(() => { setHwAssets(getHardwareAssets()); }, []);
+
+  const availableFYs = useMemo(() => getAvailableFYs(hwAssets), [hwAssets]);
+  const [selectedFY, setSelectedFY] = useState("FY 2026-27");
+
+  const hwQtrData = useMemo(() => buildHwQuarterData(hwAssets, selectedFY), [hwAssets, selectedFY]);
+
+  const hwFYAssets = useMemo(
+    () => hwAssets.filter((a) => getFiscalInfo(a.assignedDate)?.fy === selectedFY),
+    [hwAssets, selectedFY]
+  );
+
+  const hwOsDonut = useMemo(() => {
+    const mac = hwFYAssets.filter((a) => getOsType(a.laptopModel) === "Mac").length;
+    const win = hwFYAssets.length - mac;
+    return [{ name: "Mac", value: mac }, { name: "Windows", value: win }].filter((d) => d.value > 0);
+  }, [hwFYAssets]);
+
+  const hwSubDonut = useMemo(() => [
+    { name: "Primary",   value: hwFYAssets.filter((a) => a.substatus === "Primary").length },
+    { name: "Secondary", value: hwFYAssets.filter((a) => a.substatus === "Secondary").length },
+  ].filter((d) => d.value > 0), [hwFYAssets]);
+
+  const hwStatusDonut = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const a of hwFYAssets) map.set(a.status, (map.get(a.status) ?? 0) + 1);
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+  }, [hwFYAssets]);
+
+  const hwStats = useMemo(() => ({
+    total:      hwFYAssets.length,
+    mac:        hwFYAssets.filter((a) => getOsType(a.laptopModel) === "Mac").length,
+    windows:    hwFYAssets.filter((a) => getOsType(a.laptopModel) === "Windows").length,
+    primary:    hwFYAssets.filter((a) => a.substatus === "Primary").length,
+    secondary:  hwFYAssets.filter((a) => a.substatus === "Secondary").length,
+    legalHold:  hwFYAssets.filter((a) => a.status === "Legal Hold").length,
+    bStock:     hwFYAssets.filter((a) => a.status === "B Stock").length,
+    refresh:    hwFYAssets.filter((a) => a.status === "Refresh Pending").length,
+  }), [hwFYAssets]);
+
+  const exportHwReport = () => {
+    const rows = hwFYAssets.map((a) => ({
+      "User Name":       a.userName,
+      "Email":           a.email,
+      "Laptop Model":    a.laptopModel,
+      "OS Type":         getOsType(a.laptopModel),
+      "Serial No":       a.serialNo,
+      "Warranty Expiry": a.warrantyExpiry,
+      "Substatus":       a.substatus,
+      "Location":        a.location,
+      "Assigned Date":   a.assignedDate,
+      "Fiscal Year":     getFiscalInfo(a.assignedDate)?.fy ?? "",
+      "Quarter":         (() => { const f = getFiscalInfo(a.assignedDate); return f ? Q_LABELS[f.q - 1] : ""; })(),
+      "Status":          a.status,
+      "Legal Hold Date": a.legalHoldDate ?? "",
+      "B Stock Date":    a.bStockDate ?? "",
+      "Notes":           a.notes ?? "",
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Hardware Report");
+    XLSX.writeFile(wb, `hardware-report-${selectedFY.replace(/\s/g, "-")}-${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
@@ -645,6 +763,223 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          HARDWARE ASSETS REPORT
+      ══════════════════════════════════════════════════════════════════════ */}
+      <div className="space-y-6">
+        {/* Section header + FY selector */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl text-white" style={{ background: "#1B2A4A" }}>
+              <Laptop size={20} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold" style={{ color: "#1B2A4A" }}>Hardware Assets Report</h2>
+              <p className="text-slate-500 text-xs mt-0.5">Quarter-wise Mac vs Windows · Primary vs Secondary</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* FY selector */}
+            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-1 py-1">
+              {availableFYs.map((fy) => (
+                <button key={fy} onClick={() => setSelectedFY(fy)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={selectedFY === fy ? { background: "#1B2A4A", color: "#fff" } : { color: "#64748b" }}>
+                  {fy}
+                </button>
+              ))}
+            </div>
+            <button onClick={exportHwReport} disabled={hwFYAssets.length === 0}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40"
+              style={{ background: "#FF4A1C" }}>
+              <Download size={14} /> Export {selectedFY}
+            </button>
+          </div>
+        </div>
+
+        {hwAssets.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-8 py-12 text-center">
+            <Laptop size={36} className="mx-auto mb-3 text-slate-300" />
+            <p className="text-slate-500 text-sm">No hardware assets imported yet.</p>
+            <p className="text-slate-400 text-xs mt-1">Go to <strong>Hardware Assets</strong> page to upload your Excel file.</p>
+          </div>
+        ) : (
+          <>
+            {/* Stat cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+              {[
+                { label: "Total",         value: hwStats.total,     bg: "#1B2A4A", fg: "#fff" },
+                { label: "Mac",           value: hwStats.mac,       bg: "#FF4A1C", fg: "#fff" },
+                { label: "Windows",       value: hwStats.windows,   bg: "#e2e8f0", fg: "#1B2A4A" },
+                { label: "Primary",       value: hwStats.primary,   bg: "#FF7A50", fg: "#fff" },
+                { label: "Secondary",     value: hwStats.secondary, bg: "#8BA3B8", fg: "#fff" },
+                { label: "Legal Hold",    value: hwStats.legalHold, bg: "#FEE2E2", fg: "#DC2626" },
+                { label: "B Stock",       value: hwStats.bStock,    bg: "#EDE9FE", fg: "#7C3AED" },
+                { label: "Refresh Req",   value: hwStats.refresh,   bg: "#FFF7ED", fg: "#EA580C" },
+              ].map(({ label, value, bg, fg }) => (
+                <div key={label} className="rounded-2xl border border-slate-200 px-3 py-3 text-center shadow-sm"
+                  style={{ background: bg }}>
+                  <p className="text-2xl font-extrabold" style={{ color: fg }}>{value}</p>
+                  <p className="text-[11px] font-medium mt-0.5" style={{ color: fg, opacity: 0.75 }}>{label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Chart row 1 — Mac vs Windows by Quarter */}
+            <div className="grid lg:grid-cols-2 gap-6">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Mac vs Windows — by Quarter</h3>
+                <p className="text-xs text-slate-400 mb-4">{selectedFY} · based on Assigned Date</p>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={hwQtrData} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Mac"     name="Mac"     fill={HW_COLORS.Mac}     radius={[4,4,0,0]} />
+                    <Bar dataKey="Windows" name="Windows" fill={HW_COLORS.Windows} radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Primary vs Secondary by Quarter */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary vs Secondary — by Quarter</h3>
+                <p className="text-xs text-slate-400 mb-4">{selectedFY} · based on Assigned Date</p>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={hwQtrData} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                    <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                    <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="Primary"   name="Primary"   fill={HW_COLORS.Primary}   radius={[4,4,0,0]} />
+                    <Bar dataKey="Secondary" name="Secondary" fill={HW_COLORS.Secondary} radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Chart row 2 — Donut breakdowns */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* OS donut */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>OS Type Split</h3>
+                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
+                <div className="flex-1 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={hwOsDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={80} paddingAngle={3}
+                        label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                        labelLine={false}>
+                        {hwOsDonut.map((d) => (
+                          <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Substatus donut */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary vs Secondary</h3>
+                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
+                <div className="flex-1 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={hwSubDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={80} paddingAngle={3}
+                        label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+                        labelLine={false}>
+                        {hwSubDonut.map((d) => (
+                          <Cell key={d.name} fill={HW_COLORS[d.name as keyof typeof HW_COLORS] ?? "#94a3b8"} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* Status donut */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 flex flex-col">
+                <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Asset Status Mix</h3>
+                <p className="text-xs text-slate-400 mb-2">{selectedFY} total</p>
+                <div className="flex-1 flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={hwStatusDonut} dataKey="value" nameKey="name" cx="50%" cy="50%"
+                        innerRadius={55} outerRadius={80} paddingAngle={3}
+                        label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
+                        labelLine={false}>
+                        {hwStatusDonut.map((d, i) => (
+                          <Cell key={d.name} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                      <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            {/* Quarter breakdown table */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100" style={{ background: "#1B2A4A" }}>
+                <h3 className="text-sm font-semibold text-white">Quarter-wise Summary — {selectedFY}</h3>
+                <p className="text-xs mt-0.5" style={{ color: "#8BA3B8" }}>Q1 = Feb–Apr · Q2 = May–Jul · Q3 = Aug–Oct · Q4 = Nov–Jan</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-xs uppercase tracking-wide bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-5 py-3 text-left font-semibold">Quarter</th>
+                      <th className="px-5 py-3 text-center font-semibold" style={{ color: "#FF4A1C" }}>Mac</th>
+                      <th className="px-5 py-3 text-center font-semibold" style={{ color: "#1B2A4A" }}>Windows</th>
+                      <th className="px-5 py-3 text-center font-semibold text-slate-600">Total OS</th>
+                      <th className="px-5 py-3 text-center font-semibold" style={{ color: "#FF7A50" }}>Primary</th>
+                      <th className="px-5 py-3 text-center font-semibold" style={{ color: "#8BA3B8" }}>Secondary</th>
+                      <th className="px-5 py-3 text-center font-semibold text-slate-600">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {hwQtrData.map((row) => (
+                      <tr key={row.label} className="hover:bg-orange-50/30 transition-colors">
+                        <td className="px-5 py-3 font-semibold text-slate-700">{row.label}</td>
+                        <td className="px-5 py-3 text-center font-bold" style={{ color: "#FF4A1C" }}>{row.Mac}</td>
+                        <td className="px-5 py-3 text-center font-bold" style={{ color: "#1B2A4A" }}>{row.Windows}</td>
+                        <td className="px-5 py-3 text-center text-slate-600 font-medium">{row.Mac + row.Windows}</td>
+                        <td className="px-5 py-3 text-center font-bold" style={{ color: "#FF7A50" }}>{row.Primary}</td>
+                        <td className="px-5 py-3 text-center font-bold" style={{ color: "#8BA3B8" }}>{row.Secondary}</td>
+                        <td className="px-5 py-3 text-center text-slate-600 font-medium">{row.Primary + row.Secondary}</td>
+                      </tr>
+                    ))}
+                    {/* Totals row */}
+                    <tr className="font-bold text-sm border-t-2 border-slate-200" style={{ background: "#F5F1EB" }}>
+                      <td className="px-5 py-3" style={{ color: "#1B2A4A" }}>FY Total</td>
+                      <td className="px-5 py-3 text-center" style={{ color: "#FF4A1C" }}>{hwStats.mac}</td>
+                      <td className="px-5 py-3 text-center" style={{ color: "#1B2A4A" }}>{hwStats.windows}</td>
+                      <td className="px-5 py-3 text-center text-slate-700">{hwStats.total}</td>
+                      <td className="px-5 py-3 text-center" style={{ color: "#FF7A50" }}>{hwStats.primary}</td>
+                      <td className="px-5 py-3 text-center" style={{ color: "#8BA3B8" }}>{hwStats.secondary}</td>
+                      <td className="px-5 py-3 text-center text-slate-700">{hwStats.total}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
     </div>
   );
 }

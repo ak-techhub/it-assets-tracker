@@ -39,15 +39,13 @@ function getOsType(model: string): "Mac" | "Windows" {
   return "Windows";
 }
 
-function buildHwQuarterData(assets: HardwareAsset[]) {
-  // Group ALL assets by their fiscal quarter regardless of year
-  // so the chart always shows populated Q1–Q4 data
+function buildHwQuarterData(assets: HardwareAsset[], fy: string) {
   const data = Q_LABELS.map((label, i) => ({
     label, q: i + 1, Mac: 0, Windows: 0, Primary: 0, Secondary: 0,
   }));
   for (const a of assets) {
     const info = getFiscalInfo(a.assignedDate);
-    if (!info) continue;
+    if (!info || info.fy !== fy) continue;
     const row = data[info.q - 1];
     row[getOsType(a.laptopModel)]++;
     row[a.substatus]++;
@@ -85,24 +83,32 @@ function buildWarrantyQtrData(assets: HardwareAsset[], fy: string): WarrantyQtrR
 
 function getAvailableWarrantyFYs(assets: HardwareAsset[]): string[] {
   const set = new Set<string>();
+  const now = new Date();
+  const curFYStart = now.getMonth() + 1 >= 2 ? now.getFullYear() : now.getFullYear() - 1;
+  for (let y = curFYStart - 1; y <= curFYStart + 3; y++) {
+    set.add(`FY ${y}-${String(y + 1).slice(2)}`);
+  }
   for (const a of assets) {
     const info = getFiscalInfo(a.warrantyExpiry);
     if (info) set.add(info.fy);
   }
-  const sorted = Array.from(set).sort().reverse();
-  if (!sorted.includes("FY 2026-27")) sorted.unshift("FY 2026-27");
-  return sorted;
+  return Array.from(set).sort().reverse();
 }
 
 function getAvailableFYs(assets: HardwareAsset[]): string[] {
   const set = new Set<string>();
+  // Always include a 5-year window centred on current FY
+  const now = new Date();
+  const curFYStart = now.getMonth() + 1 >= 2 ? now.getFullYear() : now.getFullYear() - 1;
+  for (let y = curFYStart - 1; y <= curFYStart + 3; y++) {
+    set.add(`FY ${y}-${String(y + 1).slice(2)}`);
+  }
+  // Also add any FY found in the data
   for (const a of assets) {
     const info = getFiscalInfo(a.assignedDate);
     if (info) set.add(info.fy);
   }
-  const sorted = Array.from(set).sort().reverse();
-  if (!sorted.includes("FY 2026-27")) sorted.unshift("FY 2026-27");
-  return sorted;
+  return Array.from(set).sort().reverse();
 }
 
 // ── Drill-down result panel ──────────────────────────────────────────────────
@@ -372,7 +378,7 @@ export default function ReportsPage() {
   const availableFYs = useMemo(() => getAvailableFYs(hwAssets), [hwAssets]);
   const [selectedFY, setSelectedFY] = useState("FY 2026-27");
 
-  const hwQtrData = useMemo(() => buildHwQuarterData(hwAssets), [hwAssets]);
+  const hwQtrData = useMemo(() => buildHwQuarterData(hwAssets, selectedFY), [hwAssets, selectedFY]);
 
   const hwFYAssets = useMemo(
     () => hwAssets.filter((a) => getFiscalInfo(a.assignedDate)?.fy === selectedFY),
@@ -918,7 +924,7 @@ export default function ReportsPage() {
             <div className="grid lg:grid-cols-2 gap-6">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
                 <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Mac vs Windows — by Quarter</h3>
-                <p className="text-xs text-slate-400 mb-4">All assets · grouped by assigned quarter</p>
+                <p className="text-xs text-slate-400 mb-4">{selectedFY} · Q1=Feb–Apr · Q2=May–Jul · Q3=Aug–Oct · Q4=Nov–Jan</p>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={hwQtrData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -935,7 +941,7 @@ export default function ReportsPage() {
               {/* Primary vs Secondary by Quarter */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
                 <h3 className="text-sm font-bold mb-1" style={{ color: "#1B2A4A" }}>Primary vs Secondary — by Quarter</h3>
-                <p className="text-xs text-slate-400 mb-4">All assets · grouped by assigned quarter</p>
+                <p className="text-xs text-slate-400 mb-4">{selectedFY} · Q1=Feb–Apr · Q2=May–Jul · Q3=Aug–Oct · Q4=Nov–Jan</p>
                 <ResponsiveContainer width="100%" height={240}>
                   <BarChart data={hwQtrData} barCategoryGap="30%">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />

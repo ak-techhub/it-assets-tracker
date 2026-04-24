@@ -68,9 +68,12 @@ export type HardwareStatus =
   | 'Legal Hold'
   | 'B Stock'
   | 'Returned'
+  | 'Donated'
   | 'Decommissioned';
 
 export type HardwareSubstatus = 'Primary' | 'Secondary';
+export type ReturnMethod = 'courier' | 'direct';
+export type ReturnCondition = 'good' | 'damaged' | 'parts_only';
 
 export interface HardwareAsset {
   id: string;
@@ -86,16 +89,27 @@ export interface HardwareAsset {
   status: HardwareStatus;
 
   // Legal Hold
-  legalHoldDate?: string;       // ISO date — when hold was started
+  legalHoldDate?: string;
   legalHoldReason?: 'resigned' | 'refresh' | 'other';
   bStockAlertDismissed?: boolean;
 
   // B Stock
-  bStockDate?: string;          // ISO date — when moved to B Stock
+  bStockDate?: string;
 
   // Refresh
   refreshRequestDate?: string;
   refreshNotes?: string;
+
+  // Return tracking
+  returnDate?: string;
+  returnMethod?: ReturnMethod;       // courier | direct
+  returnCondition?: ReturnCondition; // good | damaged | parts_only
+  returnComments?: string;
+
+  // Donation
+  donatedDate?: string;
+  donatedTo?: string;               // org / person name
+  donatedComments?: string;
 
   notes?: string;
   importedAt: string;

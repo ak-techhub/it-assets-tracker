@@ -1,15 +1,16 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Upload, Search, BarChart3, RefreshCw } from "lucide-react";
+import { Upload, Search, BarChart3, RefreshCw, Laptop } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 const links = [
-  { href: "/upload",  label: "Import & Manage",    icon: Upload },
-  { href: "/lookup",  label: "Collect Accessories", icon: Search },
-  { href: "/reports", label: "Reports",             icon: BarChart3 },
+  { href: "/upload",   label: "Import & Manage",    icon: Upload },
+  { href: "/hardware", label: "Hardware Assets",     icon: Laptop },
+  { href: "/lookup",   label: "Collect Accessories", icon: Search },
+  { href: "/reports",  label: "Reports",             icon: BarChart3 },
 ];
 
 

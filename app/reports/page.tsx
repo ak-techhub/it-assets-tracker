@@ -484,9 +484,9 @@ export default function ReportsPage() {
                   <Tooltip />
                   <Legend iconSize={10} wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="office" name="From Office" stackId="a" fill="#6366f1" radius={[0,0,0,0]}
-                    onClick={(d) => openDrill(`IT Dispatch Office — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction.shipmentType === "ship_office"))} />
+                    onClick={(d) => openDrill(`IT Dispatch Office — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction?.shipmentType === "ship_office"))} />
                   <Bar dataKey="vendor" name="Via Vendor"  stackId="a" fill="#8b5cf6" radius={[4,4,0,0]}
-                    onClick={(d) => openDrill(`IT Dispatch Vendor — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction.shipmentType === "ship_vendor"))} />
+                    onClick={(d) => openDrill(`IT Dispatch Vendor — ${d.name}`, allItems.filter((i) => i.itAction?.initiatedBy === d.name && i.itAction?.shipmentType === "ship_vendor"))} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

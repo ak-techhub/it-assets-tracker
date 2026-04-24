@@ -60,6 +60,48 @@ export interface EmployeeContact {
   email: string;
 }
 
+// ── Hardware Assets ────────────────────────────────────────────────────────
+
+export type HardwareStatus =
+  | 'Active'
+  | 'Refresh Pending'
+  | 'Legal Hold'
+  | 'B Stock'
+  | 'Returned'
+  | 'Decommissioned';
+
+export type HardwareSubstatus = 'Primary' | 'Secondary';
+
+export interface HardwareAsset {
+  id: string;
+  userName: string;
+  email: string;
+  laptopModel: string;
+  serialNo: string;
+  warrantyExpiry: string;       // ISO date
+  substatus: HardwareSubstatus;
+  location: string;
+  assignedDate: string;         // ISO date
+
+  status: HardwareStatus;
+
+  // Legal Hold
+  legalHoldDate?: string;       // ISO date — when hold was started
+  legalHoldReason?: 'resigned' | 'refresh' | 'other';
+  bStockAlertDismissed?: boolean;
+
+  // B Stock
+  bStockDate?: string;          // ISO date — when moved to B Stock
+
+  // Refresh
+  refreshRequestDate?: string;
+  refreshNotes?: string;
+
+  notes?: string;
+  importedAt: string;
+  lastUpdated: string;
+}
+
 export interface ReportSummary {
   totalRequests: number;
   approved: number;

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Upload, Search, BarChart3, ArrowRight } from "lucide-react";
+import { Upload, Search, BarChart3, Laptop, ArrowRight } from "lucide-react";
 
 const cards = [
   {
@@ -7,13 +7,21 @@ const cards = [
     icon: Upload,
     iconBg: "#FF4A1C",
     title: "Import Requests",
-    desc: "Upload an Excel file containing accessory requests. Review, manage, and organize all employee requests.",
+    desc: "Upload a ServiceNow Excel export of accessory requests. Review, manage, and organize all employee requests.",
     cta: "Go to Import",
+  },
+  {
+    href: "/hardware",
+    icon: Laptop,
+    iconBg: "#1B2A4A",
+    title: "Hardware Assets",
+    desc: "Track laptops by user, serial number, and warranty. Manage legal holds, B Stock lifecycle, and refresh requests.",
+    cta: "Manage Hardware",
   },
   {
     href: "/lookup",
     icon: Search,
-    iconBg: "#1B2A4A",
+    iconBg: "#FF7A50",
     title: "Collect Accessories",
     desc: "Employees search by name or ID to view their approved accessories and acknowledge collection or request shipment.",
     cta: "Go to Collection",
@@ -21,7 +29,7 @@ const cards = [
   {
     href: "/reports",
     icon: BarChart3,
-    iconBg: "#00B0B9",
+    iconBg: "#8BA3B8",
     title: "Reports & Analytics",
     desc: "View fulfilment summaries, delivery breakdowns, pending items, and export full data to Excel.",
     cta: "View Reports",
@@ -52,7 +60,7 @@ export default function Home() {
       </div>
 
       {/* Cards */}
-      <div className="grid sm:grid-cols-3 gap-6">
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map(({ href, icon: Icon, iconBg, title, desc, cta }) => (
           <Link
             key={href}
